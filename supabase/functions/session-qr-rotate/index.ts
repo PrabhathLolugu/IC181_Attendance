@@ -20,10 +20,12 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
     if (!session) return withCors({ error: "Session is not active." }, 404);
 
-    const { data: settings } = await db.from("course_settings").select("qr_rotation_seconds").single();
-    const rotationSeconds = settings?.qr_rotation_seconds || 25;
+    const { data: settings } = await db.from("course_settings").select("qr_rotation_seconds, qr_token_validity_seconds").single();
+    const rotationSeconds = settings?.qr_rotation_seconds || 300;
+    const tokenValiditySeconds = settings?.qr_token_validity_seconds || 600;
     const rotationId = crypto.randomUUID();
     const rotationExpiresAt = new Date(Date.now() + rotationSeconds * 1000);
+    const tokenExpiresAt = new Date(Date.now() + tokenValiditySeconds * 1000);
 
     await db
       .from("sessions")
@@ -31,7 +33,7 @@ Deno.serve(async (req: Request) => {
       .eq("id", sessionId);
 
     const qrToken = await signQrToken(
-      { sid: session.id, rot: rotationId, exp: rotationExpiresAt.getTime() },
+      { sid: session.id, rot: rotationId, exp: tokenExpiresAt.getTime() },
       Deno.env.get("QR_SIGNING_SECRET")!,
     );
 

@@ -36,6 +36,7 @@ export interface CourseSettings {
   late_window_minutes: number;
   override_code_ttl_seconds: number;
   qr_rotation_seconds: number;
+  qr_token_validity_seconds: number;
 }
 
 export type SessionType = 'theory' | 'practical';

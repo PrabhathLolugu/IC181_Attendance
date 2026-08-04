@@ -26,6 +26,7 @@ export function SettingsPage() {
         late_window_minutes: form.late_window_minutes,
         override_code_ttl_seconds: form.override_code_ttl_seconds,
         qr_rotation_seconds: form.qr_rotation_seconds,
+        qr_token_validity_seconds: form.qr_token_validity_seconds,
       })
       .eq('id', true);
     setSaving(false);
@@ -63,8 +64,22 @@ export function SettingsPage() {
             <input type="number" min={30} className="input-base" value={form.override_code_ttl_seconds} onChange={(e) => setForm({ ...form, override_code_ttl_seconds: Number(e.target.value) })} />
           </div>
           <div>
-            <label className="label">QR Rotation (seconds)</label>
-            <input type="number" min={10} className="input-base" value={form.qr_rotation_seconds} onChange={(e) => setForm({ ...form, qr_rotation_seconds: Number(e.target.value) })} />
+            <label className="label">QR Screen Refresh (minutes)</label>
+            <input
+              type="number" min={1} step={1} className="input-base"
+              value={Math.round(form.qr_rotation_seconds / 60)}
+              onChange={(e) => setForm({ ...form, qr_rotation_seconds: Number(e.target.value) * 60 })}
+            />
+            <p className="text-[11px] text-slate-400 mt-1">How often the QR shown on screen visually refreshes.</p>
+          </div>
+          <div>
+            <label className="label">Scanned QR Valid For (minutes)</label>
+            <input
+              type="number" min={1} step={1} className="input-base"
+              value={Math.round(form.qr_token_validity_seconds / 60)}
+              onChange={(e) => setForm({ ...form, qr_token_validity_seconds: Number(e.target.value) * 60 })}
+            />
+            <p className="text-[11px] text-slate-400 mt-1">Grace period after a student scans, so filling out first-time registration doesn't time out.</p>
           </div>
         </div>
         <button onClick={handleSave} disabled={saving} className="btn-primary w-full h-11 mt-2">{saving ? 'Saving…' : 'Save Settings'}</button>
