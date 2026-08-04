@@ -34,12 +34,11 @@ interface EnrollForm {
   department: string;
   program: string;
   semester: string;
-  section: string;
   batch: string;
 }
 
 const emptyEnrollForm: EnrollForm = {
-  name: '', email: '', phone: '', department: '', program: '', semester: '', section: '', batch: '',
+  name: '', email: '', phone: '', department: '', program: '', semester: '', batch: '',
 };
 
 export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
@@ -130,7 +129,6 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
           department: res.student.department ?? '',
           program: res.student.program ?? '',
           semester: res.student.semester ?? '',
-          section: res.student.section ?? '',
           batch: res.student.batch ?? '',
         });
         setStep('confirm');
@@ -334,7 +332,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
               <p className="font-semibold text-slate-900 dark:text-slate-100">{student.name}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">{student.roll_number}</p>
               <div className="flex flex-wrap gap-1.5 mt-1">
-                {[student.department, student.program, student.semester && `Sem ${student.semester}`, student.section, student.batch]
+                {[student.department, student.program, student.semester && `Sem ${student.semester}`, student.group_label && `Group ${student.group_label}`, student.batch]
                   .filter(Boolean)
                   .map((v) => (
                     <span key={String(v)} className="badge-slate">{v}</span>
@@ -392,14 +390,10 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
                   <input className="input-base" value={enrollForm.program} onChange={(e) => setEnrollForm((f) => ({ ...f, program: e.target.value }))} />
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">Semester</label>
                   <input className="input-base" value={enrollForm.semester} onChange={(e) => setEnrollForm((f) => ({ ...f, semester: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="label">Section</label>
-                  <input className="input-base" value={enrollForm.section} onChange={(e) => setEnrollForm((f) => ({ ...f, section: e.target.value }))} />
                 </div>
                 <div>
                   <label className="label">Batch</label>

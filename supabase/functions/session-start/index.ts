@@ -31,6 +31,18 @@ Deno.serve(async (req: Request) => {
     const rotationExpiresAt = new Date(Date.now() + rotationSeconds * 1000);
     const tokenExpiresAt = new Date(Date.now() + tokenValiditySeconds * 1000);
 
+    let roundId: string | null = body.roundId || null;
+    const newRoundName = String(body.newRoundName ?? "").trim();
+    if (!roundId && newRoundName) {
+      const { data: round, error: roundErr } = await db
+        .from("activity_rounds")
+        .insert({ name: newRoundName, created_by: auth.staff.id })
+        .select()
+        .single();
+      if (roundErr || !round) return withCors({ error: "Could not create the round." }, 500);
+      roundId = round.id;
+    }
+
     const { data: session, error } = await db
       .from("sessions")
       .insert({
@@ -41,7 +53,8 @@ Deno.serve(async (req: Request) => {
         anchor_lat: lat,
         anchor_lng: lng,
         radius_meters: radius,
-        section_filter: body.sectionFilter || null,
+        group_filter: body.groupFilter || null,
+        round_id: roundId,
         rotation_id: rotationId,
         rotation_expires_at: rotationExpiresAt.toISOString(),
         allow_gps_override: body.allowGpsOverride !== false,

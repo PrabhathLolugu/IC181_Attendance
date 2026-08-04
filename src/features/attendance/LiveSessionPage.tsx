@@ -8,7 +8,7 @@ import { AttendanceTable } from '../../components/shared/AttendanceTable';
 import { ManualAttendanceModal } from '../../components/shared/ManualAttendanceModal';
 import { timeAgo, formatTime } from '../../lib/utils';
 import { SESSION_TYPE_PRESETS } from '../../types';
-import type { Staff, Session, AttendanceRecord, GpsOverrideRequest, CourseSettings } from '../../types';
+import type { Staff, Session, AttendanceRecord, GpsOverrideRequest, CourseSettings, ActivityRound } from '../../types';
 
 interface Props { staff: Staff; }
 
@@ -25,6 +25,8 @@ export function LiveSessionPage({ staff }: Props) {
   const [showStart, setShowStart] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [overrideCode, setOverrideCode] = useState<{ code: string; expiresAt: string } | null>(null);
+  const [groupChoices, setGroupChoices] = useState<string[]>([]);
+  const [roundChoices, setRoundChoices] = useState<ActivityRound[]>([]);
 
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
@@ -34,15 +36,25 @@ export function LiveSessionPage({ staff }: Props) {
     setSelectedId((prev) => (prev && data?.some((s) => s.id === prev) ? prev : data?.[0]?.id ?? null));
   }, []);
 
+  const loadPickerData = useCallback(async () => {
+    const [{ data: groups }, { data: rounds }] = await Promise.all([
+      supabase.from('students').select('group_label').eq('status', 'active').not('group_label', 'is', null),
+      supabase.from('activity_rounds').select('*').order('created_at', { ascending: false }).limit(30),
+    ]);
+    setGroupChoices(Array.from(new Set((groups ?? []).map((g) => g.group_label as string))).sort());
+    setRoundChoices(rounds ?? []);
+  }, []);
+
   useEffect(() => {
     supabase.from('course_settings').select('*').single().then(({ data }) => setSettings(data));
     loadSessions();
+    loadPickerData();
     const channel = supabase
       .channel('live_sessions_list')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, loadSessions)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [loadSessions]);
+  }, [loadSessions, loadPickerData]);
 
   const loadSessionDetail = useCallback(async (sessionId: string) => {
     const [{ data: r }, { data: o }] = await Promise.all([
@@ -126,7 +138,7 @@ export function LiveSessionPage({ staff }: Props) {
   if (sessions.length === 0) {
     return (
       <main className="page">
-        <StartSessionPanel staff={staff} onStarted={loadSessions} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={settings?.course_name ?? 'IC181'} />
+        <StartSessionPanel staff={staff} onStarted={loadSessions} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={settings?.course_name ?? 'IC181'} groupChoices={groupChoices} roundChoices={roundChoices} onPickerDataChanged={loadPickerData} />
       </main>
     );
   }
@@ -147,7 +159,7 @@ export function LiveSessionPage({ staff }: Props) {
                       : 'bg-white dark:bg-[#161b22] border-slate-200 dark:border-[#30363d] text-slate-600 dark:text-slate-300 hover:border-blue-300'
                   }`}
                 >
-                  {s.course_name} · {s.session_type} · {formatTime(s.created_at)}
+                  {s.course_name} · {s.session_type}{s.group_filter ? ` (Group ${s.group_filter})` : ''} · {formatTime(s.created_at)}
                 </button>
               ))}
               <button onClick={() => setShowStart(true)} className="btn-outline btn-sm">+ Start Another</button>
@@ -198,7 +210,7 @@ export function LiveSessionPage({ staff }: Props) {
             <div className="card p-6 flex flex-col items-center gap-4">
               <div className="text-center">
                 <p className="font-semibold text-slate-900 dark:text-slate-100">Scan to Join</p>
-                <p className="text-xs text-slate-400 mt-0.5">{selected.course_name} · {selected.session_type}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{selected.course_name} · {selected.session_type}{selected.group_filter ? ` · Group ${selected.group_filter}` : ' · General'}</p>
               </div>
               <div className={`p-4 rounded-3xl border-2 transition-all duration-300 ${countdown <= 5 ? 'border-red-400' : 'border-slate-200 dark:border-[#30363d]'}`}>
                 {qrUrl && <QRCodeCanvas value={qrUrl} size={220} level="H" fgColor="#0f172a" bgColor="#ffffff" />}
@@ -245,7 +257,7 @@ export function LiveSessionPage({ staff }: Props) {
         ))}
 
       <Modal open={showStart} onClose={() => setShowStart(false)} title="Start Another Session" size="sm">
-        <StartSessionPanel staff={staff} embedded onStarted={() => { setShowStart(false); loadSessions(); }} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={settings?.course_name ?? 'IC181'} />
+        <StartSessionPanel staff={staff} embedded onStarted={() => { setShowStart(false); loadSessions(); }} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={settings?.course_name ?? 'IC181'} groupChoices={groupChoices} roundChoices={roundChoices} onPickerDataChanged={loadPickerData} />
       </Modal>
 
       {selected && (
@@ -265,14 +277,21 @@ function StatMini({ label, value, color }: { label: string; value: number; color
 }
 
 function StartSessionPanel({
-  staff, onStarted, defaultRadius, defaultCourseName, embedded,
-}: { staff: Staff; onStarted: () => void; defaultRadius: number; defaultCourseName: string; embedded?: boolean }) {
+  staff, onStarted, defaultRadius, defaultCourseName, groupChoices, roundChoices, onPickerDataChanged, embedded,
+}: {
+  staff: Staff; onStarted: () => void; defaultRadius: number; defaultCourseName: string;
+  groupChoices: string[]; roundChoices: ActivityRound[]; onPickerDataChanged: () => void; embedded?: boolean;
+}) {
   const [courseChoice, setCourseChoice] = useState<'default' | 'custom'>('default');
   const [customCourse, setCustomCourse] = useState('');
   const [typeChoice, setTypeChoice] = useState<string>('Theory');
   const [customType, setCustomType] = useState('');
   const [allowOverride, setAllowOverride] = useState(true);
-  const [sectionFilter, setSectionFilter] = useState('');
+  const [audience, setAudience] = useState<'general' | 'group'>('general');
+  const [groupChoice, setGroupChoice] = useState<string>('');
+  const [customGroup, setCustomGroup] = useState('');
+  const [roundChoice, setRoundChoice] = useState<string>('none');
+  const [newRoundName, setNewRoundName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -281,8 +300,11 @@ function StartSessionPanel({
     setError('');
     const courseName = courseChoice === 'custom' ? customCourse.trim() : defaultCourseName;
     const sessionType = typeChoice === 'Other' ? customType.trim() : typeChoice;
+    const groupFilter = audience === 'group' ? (groupChoice === '__custom__' ? customGroup.trim().toUpperCase() : groupChoice) : '';
     if (!courseName) { setError('Please name the course.'); return; }
     if (!sessionType) { setError('Please name the session type.'); return; }
+    if (audience === 'group' && !groupFilter) { setError('Please pick or type a group.'); return; }
+    if (roundChoice === '__new__' && !newRoundName.trim()) { setError('Please name the new round.'); return; }
     if (!navigator.geolocation) { setError('This device does not support location services.'); return; }
     setLoading(true);
     navigator.geolocation.getCurrentPosition(
@@ -295,10 +317,13 @@ function StartSessionPanel({
             lng: pos.coords.longitude,
             radiusMeters: defaultRadius,
             allowGpsOverride: allowOverride,
-            sectionFilter: sectionFilter.trim() || undefined,
+            groupFilter: groupFilter || undefined,
+            roundId: roundChoice !== 'none' && roundChoice !== '__new__' ? roundChoice : undefined,
+            newRoundName: roundChoice === '__new__' ? newRoundName.trim() : undefined,
           });
           toast('success', 'Session started.');
           onStarted();
+          onPickerDataChanged();
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Could not start the session.');
         } finally {
@@ -352,9 +377,41 @@ function StartSessionPanel({
           )}
         </div>
         <div>
-          <label className="label">Section (optional — leave blank if everyone attends)</label>
-          <input value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)} placeholder="e.g. B1" className="input-base" />
+          <label className="label">Audience</label>
+          <select value={audience} onChange={(e) => setAudience(e.target.value as 'general' | 'group')} className="input-base">
+            <option value="general">General — everyone can attend</option>
+            <option value="group">Specific group</option>
+          </select>
+          {audience === 'group' && (
+            <div className="mt-2 flex flex-col gap-2">
+              <select value={groupChoice} onChange={(e) => setGroupChoice(e.target.value)} className="input-base">
+                <option value="">Select a group…</option>
+                {groupChoices.map((g) => <option key={g} value={g}>Group {g}</option>)}
+                <option value="__custom__">New group…</option>
+              </select>
+              {groupChoice === '__custom__' && (
+                <input value={customGroup} onChange={(e) => setCustomGroup(e.target.value)} placeholder="e.g. I" maxLength={3} className="input-base" autoFocus />
+              )}
+              <p className="text-[11px] text-slate-400">Anyone can still scan and attend — this only affects who this session counts against in reports.</p>
+            </div>
+          )}
         </div>
+        {audience === 'group' && (
+          <div>
+            <label className="label">Part of a round? (optional)</label>
+            <select value={roundChoice} onChange={(e) => setRoundChoice(e.target.value)} className="input-base">
+              <option value="none">No — counts on its own</option>
+              {roundChoices.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              <option value="__new__">+ New round…</option>
+            </select>
+            {roundChoice === '__new__' && (
+              <input value={newRoundName} onChange={(e) => setNewRoundName(e.target.value)} placeholder="e.g. Yoga — Week 3" className="input-base mt-2" autoFocus />
+            )}
+            <p className="text-[11px] text-slate-400 mt-1">
+              A round lets a student who misses their own group's day still get credit by attending a different group's session in the same round — as long as they attend at least one before every session in the round has ended.
+            </p>
+          </div>
+        )}
         <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
           <input type="checkbox" checked={allowOverride} onChange={(e) => setAllowOverride(e.target.checked)} className="rounded" />
           Allow GPS override requests for this session

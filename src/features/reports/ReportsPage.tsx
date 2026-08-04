@@ -81,8 +81,8 @@ export function ReportsPage({ staff }: Props) {
   }
 
   function handleCsvExport() {
-    const header = ['Roll Number', 'Name', 'Section', 'Present', 'Late', 'Excused', 'Manual', 'Override', 'Total Sessions', 'Attendance %'];
-    const rows = filteredSummaries.map((s) => [s.roll_number, s.name, s.section ?? '', s.present_count, s.late_count, s.excused_count, s.manual_count, s.override_count, s.total_sessions, s.attendance_percentage]);
+    const header = ['Roll Number', 'Name', 'Group', 'Present', 'Late', 'Excused', 'Manual', 'Override', 'Total Sessions', 'Attendance %'];
+    const rows = filteredSummaries.map((s) => [s.roll_number, s.name, s.group_label ?? '', s.present_count, s.late_count, s.excused_count, s.manual_count, s.override_count, s.total_sessions, s.attendance_percentage]);
     const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -177,7 +177,7 @@ export function ReportsPage({ staff }: Props) {
                     <td>{formatDate(s.session_date)}</td>
                     <td>{s.course_name}</td>
                     <td>{s.session_type}</td>
-                    <td className="text-slate-400">{s.section_filter || 'All'}</td>
+                    <td className="text-slate-400">{s.group_filter || 'All'}</td>
                     <td><span className={s.status === 'active' ? 'badge-green' : 'badge-slate'}>{s.status}</span></td>
                     <td className="font-semibold">{s.presentCount}</td>
                   </tr>
@@ -233,7 +233,7 @@ function SessionDetailModal({
       onClose={onClose}
       size="lg"
       title={`${session.course_name} — ${session.session_type}`}
-      subtitle={`${formatDateTime(session.created_at)} · ${session.section_filter || 'All sections'} · ${session.status}`}
+      subtitle={`${formatDateTime(session.created_at)} · ${session.group_filter || 'All groups'} · ${session.status}`}
       footer={<button onClick={() => setShowManual(true)} className="btn-secondary btn-sm">+ Add Student</button>}
     >
       {loading ? (
@@ -264,10 +264,10 @@ function StudentDetailModal({
       supabase.from('attendance_records').select('*').eq('student_id', summary.student_id),
     ]);
     const recordBySession = new Map((myRecords ?? []).map((r) => [r.session_id, r]));
-    const applicable = (allSessions ?? []).filter((s) => !s.section_filter || s.section_filter === summary.section);
+    const applicable = (allSessions ?? []).filter((s) => !s.group_filter || s.group_filter === summary.group_label);
     setRows(applicable.map((s) => ({ session: s, record: recordBySession.get(s.id) ?? null })));
     setLoading(false);
-  }, [summary.student_id, summary.section]);
+  }, [summary.student_id, summary.group_label]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -312,12 +312,12 @@ function StudentDetailModal({
       onClose={onClose}
       size="lg"
       title={summary.name}
-      subtitle={`${summary.roll_number} · ${summary.section ?? 'No section'} · ${summary.attendance_percentage}% overall`}
+      subtitle={`${summary.roll_number} · ${summary.group_label ?? 'No group'} · ${summary.attendance_percentage}% overall`}
     >
       {loading ? (
         <div className="py-10 text-center text-sm text-slate-400">Loading…</div>
       ) : rows.length === 0 ? (
-        <div className="py-10 text-center text-sm text-slate-400">No sessions have ended yet for this student's section.</div>
+        <div className="py-10 text-center text-sm text-slate-400">No sessions have ended yet that apply to this student.</div>
       ) : (
         <div className="max-h-[60vh] overflow-y-auto">
           <table className="data-table">
@@ -416,7 +416,7 @@ function DayAttendanceView({ date, students }: { date: string; students: Student
             <tr>
               <th>Roll</th><th>Name</th>
               {sessions.map((s) => (
-                <th key={s.id}>{s.course_name} · {s.session_type}{s.section_filter ? ` (${s.section_filter})` : ''}</th>
+                <th key={s.id}>{s.course_name} · {s.session_type}{s.group_filter ? ` (Group ${s.group_filter})` : ''}</th>
               ))}
             </tr>
           </thead>
@@ -426,7 +426,7 @@ function DayAttendanceView({ date, students }: { date: string; students: Student
                 <td className="font-mono font-medium">{student.roll_number}</td>
                 <td>{student.name}</td>
                 {sessions.map((s) => {
-                  const applicable = !s.section_filter || s.section_filter === student.section;
+                  const applicable = !s.group_filter || s.group_filter === student.group_label;
                   const record = records.find((r) => r.session_id === s.id && r.student_id === student.id);
                   return (
                     <td key={s.id}>

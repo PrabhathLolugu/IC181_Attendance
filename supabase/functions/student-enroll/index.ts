@@ -28,7 +28,6 @@ Deno.serve(async (req: Request) => {
         department: body.department ? String(body.department).trim() : null,
         program: body.program ? String(body.program).trim() : null,
         semester: body.semester ? String(body.semester).trim() : null,
-        section: body.section ? String(body.section).trim() : null,
         batch: body.batch ? String(body.batch).trim() : null,
       })
       .select()

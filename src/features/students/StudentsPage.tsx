@@ -8,7 +8,7 @@ import type { Staff, Student, StudentAttendanceSummary, StudentStatus } from '..
 interface Props { staff: Staff; }
 
 const PAGE_SIZE = 20;
-const emptyForm = { roll_number: '', name: '', email: '', phone: '', department: '', program: '', semester: '', section: '', batch: '' };
+const emptyForm = { roll_number: '', name: '', email: '', phone: '', department: '', program: '', semester: '', group_label: '', batch: '' };
 
 export function StudentsPage({ staff }: Props) {
   const isAdmin = staff.role === 'admin';
@@ -22,6 +22,8 @@ export function StudentsPage({ staff }: Props) {
   const [editing, setEditing] = useState<Student | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkGroup, setBulkGroup] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -31,6 +33,7 @@ export function StudentsPage({ staff }: Props) {
     const { data, count } = await query.range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
     setStudents(data ?? []);
     setTotal(count ?? 0);
+    setSelected(new Set());
 
     const { data: summaryRows } = await supabase.from('student_attendance_summary').select('*');
     const map: Record<string, StudentAttendanceSummary> = {};
@@ -53,6 +56,30 @@ export function StudentsPage({ staff }: Props) {
     const { error } = await supabase.from('students').update({ status: 'active', updated_by: staff.id }).eq('id', student.id);
     if (error) { toast('error', 'Could not restore student.'); return; }
     toast('success', 'Student restored.');
+    load();
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => (prev.size === students.length ? new Set() : new Set(students.map((s) => s.id))));
+  }
+
+  async function handleBulkAssignGroup() {
+    if (selected.size === 0 || !bulkGroup.trim()) return;
+    const { error } = await supabase
+      .from('students')
+      .update({ group_label: bulkGroup.trim().toUpperCase(), updated_by: staff.id })
+      .in('id', Array.from(selected));
+    if (error) { toast('error', 'Could not assign group.'); return; }
+    toast('success', `Assigned ${selected.size} student(s) to Group ${bulkGroup.trim().toUpperCase()}.`);
+    setBulkGroup('');
     load();
   }
 
@@ -87,28 +114,45 @@ export function StudentsPage({ staff }: Props) {
         </select>
       </div>
 
+      {isAdmin && selected.size > 0 && (
+        <div className="card p-3 flex items-center gap-3 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20">
+          <span className="text-sm font-medium text-blue-900 dark:text-blue-300">{selected.size} selected</span>
+          <input
+            className="input-base w-32"
+            placeholder="Group e.g. B"
+            value={bulkGroup}
+            onChange={(e) => setBulkGroup(e.target.value)}
+            maxLength={3}
+          />
+          <button onClick={handleBulkAssignGroup} disabled={!bulkGroup.trim()} className="btn-primary btn-sm">Assign Group</button>
+          <button onClick={() => setSelected(new Set())} className="btn-ghost btn-sm">Clear selection</button>
+        </div>
+      )}
+
       <div className="card overflow-x-auto">
-        <table className="data-table min-w-[720px]">
+        <table className="data-table min-w-[760px]">
           <thead>
             <tr>
-              <th>Roll</th><th>Name</th><th>Dept / Program</th><th>Section</th><th>Attendance %</th><th>Status</th>
+              {isAdmin && <th><input type="checkbox" checked={selected.size > 0 && selected.size === students.length} onChange={toggleSelectAll} /></th>}
+              <th>Roll</th><th>Name</th><th>Dept / Program</th><th>Group</th><th>Attendance %</th><th>Status</th>
               {isAdmin && <th></th>}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="text-center py-10 text-slate-400 text-sm">Loading…</td></tr>
+              <tr><td colSpan={8} className="text-center py-10 text-slate-400 text-sm">Loading…</td></tr>
             ) : students.length === 0 ? (
-              <tr><td colSpan={7} className="text-center py-10 text-slate-400 text-sm">No students found.</td></tr>
+              <tr><td colSpan={8} className="text-center py-10 text-slate-400 text-sm">No students found.</td></tr>
             ) : (
               students.map((s) => {
                 const summary = summaries[s.roll_number];
                 return (
                   <tr key={s.id}>
+                    {isAdmin && <td><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} /></td>}
                     <td className="font-mono font-medium">{s.roll_number}</td>
                     <td>{s.name}</td>
                     <td className="text-slate-500 dark:text-slate-400 text-xs">{[s.department, s.program].filter(Boolean).join(' · ') || '—'}</td>
-                    <td className="text-slate-500 dark:text-slate-400 text-xs">{s.section || '—'}</td>
+                    <td>{s.group_label ? <span className="badge-blue">{s.group_label}</span> : <span className="text-slate-300 dark:text-slate-600 text-xs">Unassigned</span>}</td>
                     <td>
                       {summary ? (
                         <span className={`font-semibold ${pctColor(summary.attendance_percentage)}`}>{summary.attendance_percentage}%</span>
@@ -173,7 +217,7 @@ function StudentFormModal({
       setForm({
         roll_number: student.roll_number, name: student.name, email: student.email ?? '', phone: student.phone ?? '',
         department: student.department ?? '', program: student.program ?? '', semester: student.semester ?? '',
-        section: student.section ?? '', batch: student.batch ?? '',
+        group_label: student.group_label ?? '', batch: student.batch ?? '',
       });
     } else {
       setForm(emptyForm);
@@ -193,7 +237,7 @@ function StudentFormModal({
       department: form.department.trim() || null,
       program: form.program.trim() || null,
       semester: form.semester.trim() || null,
-      section: form.section.trim() || null,
+      group_label: form.group_label.trim().toUpperCase() || null,
       batch: form.batch.trim() || null,
     };
 
@@ -220,7 +264,7 @@ function StudentFormModal({
         <Field label="Department" value={form.department} onChange={(v) => setForm((f) => ({ ...f, department: v }))} />
         <Field label="Program" value={form.program} onChange={(v) => setForm((f) => ({ ...f, program: v }))} />
         <Field label="Semester" value={form.semester} onChange={(v) => setForm((f) => ({ ...f, semester: v }))} />
-        <Field label="Section" value={form.section} onChange={(v) => setForm((f) => ({ ...f, section: v }))} />
+        <Field label="Group (e.g. B)" value={form.group_label} onChange={(v) => setForm((f) => ({ ...f, group_label: v }))} />
         <Field label="Batch" value={form.batch} onChange={(v) => setForm((f) => ({ ...f, batch: v }))} />
       </div>
       {error && <div className="mt-3 px-4 py-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl text-red-700 dark:text-red-400 text-xs">{error}</div>}
@@ -238,7 +282,7 @@ function Field({ label, value, onChange, disabled }: { label: string; value: str
   );
 }
 
-interface ParsedRow { roll_number: string; name: string; email?: string; phone?: string; department?: string; program?: string; semester?: string; section?: string; batch?: string; error?: string; }
+interface ParsedRow { roll_number: string; name: string; email?: string; phone?: string; department?: string; program?: string; semester?: string; group_label?: string; batch?: string; error?: string; }
 
 function parseCsv(text: string): ParsedRow[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
@@ -249,6 +293,7 @@ function parseCsv(text: string): ParsedRow[] {
 
   const rollIdx = col('roll_number') !== -1 ? col('roll_number') : col('roll');
   const nameIdx = col('name');
+  const groupIdx = col('group') !== -1 ? col('group') : col('group_label');
   if (rollIdx === -1 || nameIdx === -1) return [];
 
   return lines.slice(1).map((line) => {
@@ -261,7 +306,7 @@ function parseCsv(text: string): ParsedRow[] {
       department: cells[col('department')] || undefined,
       program: cells[col('program')] || undefined,
       semester: cells[col('semester')] || undefined,
-      section: cells[col('section')] || undefined,
+      group_label: groupIdx !== -1 ? (cells[groupIdx] || undefined)?.toUpperCase() : undefined,
       batch: cells[col('batch')] || undefined,
     };
     if (!row.roll_number || !row.name) row.error = 'Missing roll number or name';
@@ -291,7 +336,7 @@ function ImportModal({ open, onClose, staff, onImported }: { open: boolean; onCl
       valid.map((r) => ({
         roll_number: r.roll_number, name: r.name, email: r.email || null, phone: r.phone || null,
         department: r.department || null, program: r.program || null, semester: r.semester || null,
-        section: r.section || null, batch: r.batch || null, created_by: staff.id,
+        group_label: r.group_label || null, batch: r.batch || null, created_by: staff.id,
       })),
       { onConflict: 'roll_number', ignoreDuplicates: true },
     );
@@ -303,7 +348,7 @@ function ImportModal({ open, onClose, staff, onImported }: { open: boolean; onCl
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Import Students" subtitle="CSV with columns: roll_number, name, email, phone, department, program, semester, section, batch" size="lg">
+    <Modal open={open} onClose={onClose} title="Import Students" subtitle="CSV with columns: roll_number, name, email, phone, department, program, semester, group, batch" size="lg">
       <input type="file" accept=".csv" onChange={handleFile} className="text-sm" />
       {rows.length > 0 && (
         <div className="mt-4">
@@ -312,12 +357,13 @@ function ImportModal({ open, onClose, staff, onImported }: { open: boolean; onCl
           </p>
           <div className="max-h-64 overflow-y-auto border border-slate-100 dark:border-[#21262d] rounded-xl">
             <table className="data-table">
-              <thead><tr><th>Roll</th><th>Name</th><th>Status</th></tr></thead>
+              <thead><tr><th>Roll</th><th>Name</th><th>Group</th><th>Status</th></tr></thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i}>
                     <td className="font-mono">{r.roll_number || '—'}</td>
                     <td>{r.name || '—'}</td>
+                    <td>{r.group_label || '—'}</td>
                     <td>{r.error ? <span className="badge-red">{r.error}</span> : <span className="badge-green">Ready</span>}</td>
                   </tr>
                 ))}

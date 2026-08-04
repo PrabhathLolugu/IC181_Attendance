@@ -22,7 +22,7 @@ export interface Student {
   department?: string | null;
   program?: string | null;
   semester?: string | null;
-  section?: string | null;
+  group_label?: string | null;
   batch?: string | null;
   photo_url?: string | null;
   status: StudentStatus;
@@ -52,7 +52,8 @@ export interface Session {
   anchor_lat: number;
   anchor_lng: number;
   radius_meters: number;
-  section_filter?: string | null;
+  group_filter?: string | null;
+  round_id?: string | null;
   rotation_id: string;
   rotation_expires_at: string;
   allow_gps_override: boolean;
@@ -114,7 +115,7 @@ export interface StudentAttendanceSummary {
   student_id: string;
   roll_number: string;
   name: string;
-  section?: string | null;
+  group_label?: string | null;
   present_count: number;
   late_count: number;
   excused_count: number;
@@ -151,4 +152,10 @@ export interface GradeScaleBand {
   max_percent: number;
   color?: string | null;
   position: number;
+}
+
+export interface ActivityRound {
+  id: string;
+  name: string;
+  created_at: string;
 }

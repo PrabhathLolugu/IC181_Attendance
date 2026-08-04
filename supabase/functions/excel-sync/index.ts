@@ -21,11 +21,13 @@ Deno.serve(async (req: Request) => {
     const { data: settings } = await db.from("course_settings").select("course_name").single();
     const { data: students } = await db
       .from("students")
-      .select("roll_number, name, section")
+      .select("roll_number, name, group_label")
       .eq("status", "active")
       .order("roll_number");
+    const { data: summaries } = await db.from("student_attendance_summary").select("roll_number, attendance_percentage");
+    const pctByRoll = new Map((summaries ?? []).map((s) => [s.roll_number, s.attendance_percentage]));
 
-    let sessionQuery = db.from("sessions").select("id, session_date, session_type, course_name, section_filter").eq("status", "ended").order("session_date");
+    let sessionQuery = db.from("sessions").select("id, session_date, session_type, course_name, group_filter, round_id").eq("status", "ended").order("session_date");
     if (fromDate) sessionQuery = sessionQuery.gte("session_date", fromDate);
     if (toDate) sessionQuery = sessionQuery.lte("session_date", toDate);
     const { data: sessions } = await sessionQuery;
@@ -44,9 +46,9 @@ Deno.serve(async (req: Request) => {
     sheet.columns = [
       { header: "Roll Number", key: "roll", width: 16 },
       { header: "Name", key: "name", width: 26 },
-      { header: "Section", key: "section", width: 10 },
+      { header: "Group", key: "group", width: 10 },
       ...(sessions ?? []).map((s) => ({
-        header: `${s.session_date} · ${s.course_name} (${s.session_type})`,
+        header: `${s.session_date} · ${s.course_name} (${s.session_type})${s.round_id ? " ↻" : ""}`,
         key: s.id,
         width: 16,
       })),
@@ -57,33 +59,21 @@ Deno.serve(async (req: Request) => {
     const LABELS: Record<string, string> = { late: "Late", manual: "Manual", override: "Override", excused: "Excused", present: "P" };
 
     for (const student of students ?? []) {
-      const applicableSessions = (sessions ?? []).filter((s) => !s.section_filter || s.section_filter === student.section);
-      let presentCount = 0;
-      let excusedCount = 0;
       const row: Record<string, string | number> = {
         roll: student.roll_number,
         name: student.name,
-        section: student.section ?? "",
+        group: student.group_label ?? "",
       };
       for (const s of sessions ?? []) {
-        const applicable = applicableSessions.some((a) => a.id === s.id);
+        const applicable = !s.group_filter || s.group_filter === student.group_label;
         if (!applicable) {
           row[s.id] = "-";
           continue;
         }
         const status = byStudentSession.get(`${student.roll_number}|${s.id}`);
-        if (status === "excused") {
-          excusedCount += 1;
-          row[s.id] = "Excused";
-        } else if (status) {
-          presentCount += 1;
-          row[s.id] = LABELS[status] ?? "P";
-        } else {
-          row[s.id] = "A";
-        }
+        row[s.id] = status ? (LABELS[status] ?? "P") : "A";
       }
-      const denominator = applicableSessions.length - excusedCount;
-      row.pct = denominator > 0 ? Math.round((presentCount / denominator) * 1000) / 10 : 0;
+      row.pct = pctByRoll.get(student.roll_number) ?? 0;
       sheet.addRow(row);
     }
 

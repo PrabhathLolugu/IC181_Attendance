@@ -120,8 +120,8 @@ export function DashboardPage({ staff, onNavigate }: Props) {
                   >
                     <div>
                       <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {s.session_type === 'practical' ? 'Practical' : 'Theory'}
-                        {s.section_filter && <span className="text-slate-400 font-normal"> · {s.section_filter}</span>}
+                        {s.course_name} · {s.session_type}
+                        {s.group_filter && <span className="text-slate-400 font-normal"> · Group {s.group_filter}</span>}
                       </p>
                       <p className="text-xs text-slate-400 mt-0.5">{new Date(s.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
