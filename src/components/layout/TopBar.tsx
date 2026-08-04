@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { Avatar } from '../ui/Avatar';
+import { Modal } from '../ui/Modal';
+import { toast } from '../ui/Toast';
 import { statusLabel } from '../../lib/utils';
+import { supabase } from '../../services/supabase';
 import type { Staff } from '../../types';
 
 interface Props {
@@ -11,6 +14,7 @@ interface Props {
 
 export function TopBar({ staff, courseName, onLogout }: Props) {
   const [showUser, setShowUser] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   return (
     <header className="sticky top-0 z-40 flex items-center justify-between h-14 px-6 bg-white/90 dark:bg-[#0d1117]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-[#21262d] flex-shrink-0">
@@ -52,6 +56,15 @@ export function TopBar({ staff, courseName, onLogout }: Props) {
                 <span className="badge-blue mt-1.5 inline-flex">{statusLabel(staff.role)}</span>
               </div>
               <div className="p-1.5">
+                <button
+                  onClick={() => { setShowUser(false); setShowPasswordModal(true); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#21262d] transition-colors"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  Change password
+                </button>
                 <button onClick={onLogout} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors">
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -63,6 +76,46 @@ export function TopBar({ staff, courseName, onLogout }: Props) {
           </>
         )}
       </div>
+
+      <ChangePasswordModal open={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
     </header>
+  );
+}
+
+function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSave() {
+    setError('');
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (password !== confirm) { setError('Passwords do not match.'); return; }
+    setLoading(true);
+    const { error: updateErr } = await supabase.auth.updateUser({ password });
+    setLoading(false);
+    if (updateErr) { setError(updateErr.message); return; }
+    toast('success', 'Password updated.');
+    setPassword('');
+    setConfirm('');
+    onClose();
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Change Password" subtitle="Sets your password immediately — no email needed.">
+      <div className="flex flex-col gap-4">
+        <div>
+          <label className="label">New Password</label>
+          <input type="password" className="input-base" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+        </div>
+        <div>
+          <label className="label">Confirm Password</label>
+          <input type="password" className="input-base" value={confirm} onChange={(e) => setConfirm(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSave()} />
+        </div>
+        {error && <div className="px-4 py-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl text-red-700 dark:text-red-400 text-xs">{error}</div>}
+        <button onClick={handleSave} disabled={loading} className="btn-primary w-full h-11">{loading ? 'Saving…' : 'Save Password'}</button>
+      </div>
+    </Modal>
   );
 }
