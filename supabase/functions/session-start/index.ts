@@ -1,0 +1,67 @@
+import { handleOptions, withCors } from "../_shared/cors.ts";
+import { serviceClient } from "../_shared/client.ts";
+import { requireStaff } from "../_shared/staffAuth.ts";
+import { signQrToken } from "../_shared/qr.ts";
+import { logAudit } from "../_shared/audit.ts";
+
+Deno.serve(async (req: Request) => {
+  const preflight = handleOptions(req);
+  if (preflight) return preflight;
+  const auth = await requireStaff(req);
+  if ("error" in auth) return withCors({ error: auth.error }, 401);
+
+  try {
+    const body = await req.json();
+    const sessionType = body.sessionType === "practical" ? "practical" : "theory";
+    const lat = Number(body.lat);
+    const lng = Number(body.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return withCors({ error: "Your current location is required to start a session." }, 400);
+    }
+
+    const db = serviceClient();
+    const { data: settings } = await db.from("course_settings").select("*").single();
+    const radius = Number(body.radiusMeters) || settings?.gps_radius_meters || 100;
+    const rotationSeconds = settings?.qr_rotation_seconds || 25;
+    const rotationId = crypto.randomUUID();
+    const rotationExpiresAt = new Date(Date.now() + rotationSeconds * 1000);
+
+    const { data: session, error } = await db
+      .from("sessions")
+      .insert({
+        session_date: body.sessionDate || new Date().toISOString().slice(0, 10),
+        session_type: sessionType,
+        started_by: auth.staff.id,
+        anchor_lat: lat,
+        anchor_lng: lng,
+        radius_meters: radius,
+        section_filter: body.sectionFilter || null,
+        rotation_id: rotationId,
+        rotation_expires_at: rotationExpiresAt.toISOString(),
+        allow_gps_override: body.allowGpsOverride !== false,
+        notes: body.notes || null,
+      })
+      .select()
+      .single();
+
+    if (error || !session) return withCors({ error: "Could not start the session." }, 500);
+
+    const qrToken = await signQrToken(
+      { sid: session.id, rot: rotationId, exp: rotationExpiresAt.getTime() },
+      Deno.env.get("QR_SIGNING_SECRET")!,
+    );
+
+    await logAudit({
+      actorId: auth.staff.id,
+      actorLabel: auth.staff.email,
+      action: "session_started",
+      entityType: "session",
+      entityId: session.id,
+      after: session,
+    });
+
+    return withCors({ session, qrToken });
+  } catch {
+    return withCors({ error: "Invalid request." }, 400);
+  }
+});
