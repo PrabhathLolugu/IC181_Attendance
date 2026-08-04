@@ -54,6 +54,7 @@ export function statusBadgeClass(status: string): string {
     case 'late':      return 'badge-amber';
     case 'manual':    return 'badge-purple';
     case 'override':  return 'badge-blue';
+    case 'excused':   return 'badge-purple';
     case 'approved':  return 'badge-green';
     case 'rejected':  return 'badge-red';
     case 'pending':   return 'badge-amber';
@@ -73,6 +74,7 @@ export function statusLabel(status: string): string {
     late: 'Late',
     manual: 'Manual',
     override: 'GPS Override',
+    excused: 'Excused',
     approved: 'Approved',
     rejected: 'Rejected',
     pending: 'Pending',

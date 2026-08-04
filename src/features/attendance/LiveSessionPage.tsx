@@ -3,10 +3,12 @@ import { supabase } from '../../services/supabase';
 import { callFunction } from '../../lib/api';
 import { QRCodeCanvas } from 'qrcode.react';
 import { Modal } from '../../components/ui/Modal';
-import { StatusBadge } from '../../components/ui/StatusBadge';
 import { toast } from '../../components/ui/Toast';
+import { AttendanceTable } from '../../components/shared/AttendanceTable';
+import { ManualAttendanceModal } from '../../components/shared/ManualAttendanceModal';
 import { timeAgo, formatTime } from '../../lib/utils';
-import type { Staff, Session, AttendanceRecord, GpsOverrideRequest, CourseSettings, Student } from '../../types';
+import { SESSION_TYPE_PRESETS } from '../../types';
+import type { Staff, Session, AttendanceRecord, GpsOverrideRequest, CourseSettings } from '../../types';
 
 interface Props { staff: Staff; }
 
@@ -124,7 +126,7 @@ export function LiveSessionPage({ staff }: Props) {
   if (sessions.length === 0) {
     return (
       <main className="page">
-        <StartSessionPanel staff={staff} onStarted={loadSessions} defaultRadius={settings?.gps_radius_meters ?? 100} />
+        <StartSessionPanel staff={staff} onStarted={loadSessions} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={settings?.course_name ?? 'IC181'} />
       </main>
     );
   }
@@ -145,7 +147,7 @@ export function LiveSessionPage({ staff }: Props) {
                       : 'bg-white dark:bg-[#161b22] border-slate-200 dark:border-[#30363d] text-slate-600 dark:text-slate-300 hover:border-blue-300'
                   }`}
                 >
-                  {s.session_type === 'practical' ? 'Practical' : 'Theory'} · {formatTime(s.created_at)}
+                  {s.course_name} · {s.session_type} · {formatTime(s.created_at)}
                 </button>
               ))}
               <button onClick={() => setShowStart(true)} className="btn-outline btn-sm">+ Start Another</button>
@@ -180,7 +182,7 @@ export function LiveSessionPage({ staff }: Props) {
               <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
             <div className="text-center">
-              <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">{selected.session_type === 'practical' ? 'Practical' : 'Theory'} Session</h1>
+              <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">{selected.course_name} — {selected.session_type}</h1>
               <p className="text-xl text-slate-500">Scan to mark attendance</p>
             </div>
             <div className={`p-8 rounded-[3rem] border-4 transition-all duration-300 ${countdown <= 5 ? 'border-red-400 scale-[1.02]' : 'border-slate-200'}`}>
@@ -194,7 +196,10 @@ export function LiveSessionPage({ staff }: Props) {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="card p-6 flex flex-col items-center gap-4">
-              <p className="font-semibold text-slate-900 dark:text-slate-100">Scan to Join</p>
+              <div className="text-center">
+                <p className="font-semibold text-slate-900 dark:text-slate-100">Scan to Join</p>
+                <p className="text-xs text-slate-400 mt-0.5">{selected.course_name} · {selected.session_type}</p>
+              </div>
               <div className={`p-4 rounded-3xl border-2 transition-all duration-300 ${countdown <= 5 ? 'border-red-400' : 'border-slate-200 dark:border-[#30363d]'}`}>
                 {qrUrl && <QRCodeCanvas value={qrUrl} size={220} level="H" fgColor="#0f172a" bgColor="#ffffff" />}
               </div>
@@ -234,34 +239,13 @@ export function LiveSessionPage({ staff }: Props) {
                 </div>
               )}
 
-              <div className="card flex-1">
-                <div className="px-5 py-4 border-b border-slate-100 dark:border-[#21262d] font-semibold text-sm text-slate-900 dark:text-slate-100">Attendance Log</div>
-                <div className="max-h-96 overflow-y-auto">
-                  {records.length === 0 ? (
-                    <div className="px-5 py-10 text-center text-sm text-slate-400">No one has marked attendance yet.</div>
-                  ) : (
-                    <table className="data-table">
-                      <thead><tr><th>Roll</th><th>Status</th><th>Method</th><th>Time</th></tr></thead>
-                      <tbody>
-                        {records.map((r) => (
-                          <tr key={r.id}>
-                            <td className="font-medium">{r.roll_number}</td>
-                            <td><StatusBadge status={r.status} /></td>
-                            <td className="text-slate-400 text-xs">{r.method.replace('_', ' ')}</td>
-                            <td className="text-slate-400 text-sm">{timeAgo(r.marked_at)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
+              <AttendanceTable staff={staff} records={records} onChanged={() => loadSessionDetail(selected.id)} />
             </div>
           </div>
         ))}
 
       <Modal open={showStart} onClose={() => setShowStart(false)} title="Start Another Session" size="sm">
-        <StartSessionPanel staff={staff} embedded onStarted={() => { setShowStart(false); loadSessions(); }} defaultRadius={settings?.gps_radius_meters ?? 100} />
+        <StartSessionPanel staff={staff} embedded onStarted={() => { setShowStart(false); loadSessions(); }} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={settings?.course_name ?? 'IC181'} />
       </Modal>
 
       {selected && (
@@ -281,9 +265,12 @@ function StatMini({ label, value, color }: { label: string; value: number; color
 }
 
 function StartSessionPanel({
-  staff, onStarted, defaultRadius, embedded,
-}: { staff: Staff; onStarted: () => void; defaultRadius: number; embedded?: boolean }) {
-  const [sessionType, setSessionType] = useState<'theory' | 'practical'>('theory');
+  staff, onStarted, defaultRadius, defaultCourseName, embedded,
+}: { staff: Staff; onStarted: () => void; defaultRadius: number; defaultCourseName: string; embedded?: boolean }) {
+  const [courseChoice, setCourseChoice] = useState<'default' | 'custom'>('default');
+  const [customCourse, setCustomCourse] = useState('');
+  const [typeChoice, setTypeChoice] = useState<string>('Theory');
+  const [customType, setCustomType] = useState('');
   const [allowOverride, setAllowOverride] = useState(true);
   const [sectionFilter, setSectionFilter] = useState('');
   const [loading, setLoading] = useState(false);
@@ -292,6 +279,10 @@ function StartSessionPanel({
   async function handleStart(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    const courseName = courseChoice === 'custom' ? customCourse.trim() : defaultCourseName;
+    const sessionType = typeChoice === 'Other' ? customType.trim() : typeChoice;
+    if (!courseName) { setError('Please name the course.'); return; }
+    if (!sessionType) { setError('Please name the session type.'); return; }
     if (!navigator.geolocation) { setError('This device does not support location services.'); return; }
     setLoading(true);
     navigator.geolocation.getCurrentPosition(
@@ -299,6 +290,7 @@ function StartSessionPanel({
         try {
           await callFunction('session-start', {
             sessionType,
+            courseName,
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
             radiusMeters: defaultRadius,
@@ -328,11 +320,36 @@ function StartSessionPanel({
       )}
       <form onSubmit={handleStart} className="flex flex-col gap-4 mt-4">
         <div>
-          <label className="label">Session Type</label>
-          <select value={sessionType} onChange={(e) => setSessionType(e.target.value as 'theory' | 'practical')} className="input-base">
-            <option value="theory">Theory</option>
-            <option value="practical">Practical</option>
+          <label className="label">Course</label>
+          <select value={courseChoice} onChange={(e) => setCourseChoice(e.target.value as 'default' | 'custom')} className="input-base">
+            <option value="default">{defaultCourseName}</option>
+            <option value="custom">Custom…</option>
           </select>
+          {courseChoice === 'custom' && (
+            <input
+              value={customCourse}
+              onChange={(e) => setCustomCourse(e.target.value)}
+              placeholder="Course name"
+              className="input-base mt-2"
+              autoFocus
+            />
+          )}
+        </div>
+        <div>
+          <label className="label">Session Type</label>
+          <select value={typeChoice} onChange={(e) => setTypeChoice(e.target.value)} className="input-base">
+            {SESSION_TYPE_PRESETS.map((t) => <option key={t} value={t}>{t}</option>)}
+            <option value="Other">Other…</option>
+          </select>
+          {typeChoice === 'Other' && (
+            <input
+              value={customType}
+              onChange={(e) => setCustomType(e.target.value)}
+              placeholder="e.g. Guest Lecture, Field Trip"
+              className="input-base mt-2"
+              autoFocus
+            />
+          )}
         </div>
         <div>
           <label className="label">Section (optional — leave blank if everyone attends)</label>
@@ -351,97 +368,3 @@ function StartSessionPanel({
   );
 }
 
-function ManualAttendanceModal({
-  open, onClose, session, onMarked,
-}: { open: boolean; onClose: () => void; session: Session; onMarked: () => void }) {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Student[]>([]);
-  const [selected, setSelected] = useState<Student | null>(null);
-  const [reason, setReason] = useState('Phone unavailable');
-  const [customReason, setCustomReason] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!query.trim() || selected) { setResults([]); return; }
-    const t = setTimeout(async () => {
-      const { data } = await supabase
-        .from('students')
-        .select('*')
-        .or(`roll_number.ilike.%${query}%,name.ilike.%${query}%`)
-        .eq('status', 'active')
-        .limit(8);
-      setResults(data ?? []);
-    }, 250);
-    return () => clearTimeout(t);
-  }, [query, selected]);
-
-  async function handleMark() {
-    if (!selected) return;
-    setLoading(true);
-    setError('');
-    try {
-      await callFunction('attendance-manual', {
-        sessionId: session.id,
-        rollNumber: selected.roll_number,
-        reason: reason === 'Other' ? customReason.trim() || 'Other' : reason,
-      });
-      toast('success', `${selected.roll_number} marked present.`);
-      onMarked();
-      setSelected(null);
-      setQuery('');
-      onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not mark attendance.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title="Manual Attendance" subtitle="For students whose device or GPS failed.">
-      <div className="flex flex-col gap-4">
-        {!selected ? (
-          <>
-            <input autoFocus className="input-base" placeholder="Search by roll number or name" value={query} onChange={(e) => setQuery(e.target.value)} />
-            <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
-              {results.map((s) => (
-                <button key={s.id} onClick={() => setSelected(s)} className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-[#21262d] text-left transition-colors">
-                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{s.name}</span>
-                  <span className="text-xs text-slate-400 font-mono">{s.roll_number}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="card p-3 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{selected.name}</p>
-                <p className="text-xs text-slate-500 font-mono">{selected.roll_number}</p>
-              </div>
-              <button onClick={() => setSelected(null)} className="text-xs text-blue-600">Change</button>
-            </div>
-            <div>
-              <label className="label">Reason</label>
-              <select value={reason} onChange={(e) => setReason(e.target.value)} className="input-base">
-                <option>Phone unavailable</option>
-                <option>Medical issue</option>
-                <option>Permission granted</option>
-                <option>Technical issue</option>
-                <option>Other</option>
-              </select>
-            </div>
-            {reason === 'Other' && (
-              <input className="input-base" placeholder="Describe the reason" value={customReason} onChange={(e) => setCustomReason(e.target.value)} />
-            )}
-            {error && <div className="px-4 py-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl text-red-700 dark:text-red-400 text-xs">{error}</div>}
-            <button onClick={handleMark} disabled={loading} className="btn-primary w-full h-11">
-              {loading ? 'Marking…' : 'Mark Present'}
-            </button>
-          </>
-        )}
-      </div>
-    </Modal>
-  );
-}

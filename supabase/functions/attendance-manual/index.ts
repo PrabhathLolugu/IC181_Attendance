@@ -13,18 +13,14 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const roll = String(body.rollNumber ?? "").trim().toUpperCase();
     const reason = String(body.reason ?? "").trim();
+    const status = ["present", "late", "excused"].includes(body.status) ? body.status : "present";
     if (!body.sessionId || !roll || !reason) {
       return withCors({ error: "Session, roll number, and a reason are all required." }, 400);
     }
 
     const db = serviceClient();
-    const { data: session } = await db
-      .from("sessions")
-      .select("*")
-      .eq("id", body.sessionId)
-      .eq("status", "active")
-      .maybeSingle();
-    if (!session) return withCors({ error: "Session is not active." }, 404);
+    const { data: session } = await db.from("sessions").select("*").eq("id", body.sessionId).maybeSingle();
+    if (!session) return withCors({ error: "Session not found." }, 404);
 
     const { data: student } = await db.from("students").select("*").eq("roll_number", roll).maybeSingle();
     if (!student) return withCors({ error: "No student found with that roll number." }, 404);
@@ -35,7 +31,7 @@ Deno.serve(async (req: Request) => {
         session_id: session.id,
         student_id: student.id,
         roll_number: student.roll_number,
-        status: "manual",
+        status,
         method: "manual",
         recorded_by: auth.staff.id,
         notes: reason,

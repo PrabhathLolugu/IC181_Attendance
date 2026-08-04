@@ -39,13 +39,14 @@ export interface CourseSettings {
   qr_token_validity_seconds: number;
 }
 
-export type SessionType = 'theory' | 'practical';
+export const SESSION_TYPE_PRESETS = ['Theory', 'Practical', 'Yoga', 'Extracurricular'] as const;
 export type SessionStatus = 'active' | 'ended';
 
 export interface Session {
   id: string;
   session_date: string;
-  session_type: SessionType;
+  session_type: string;
+  course_name: string;
   status: SessionStatus;
   started_by: string;
   anchor_lat: number;
@@ -62,7 +63,7 @@ export interface Session {
   ended_at?: string | null;
 }
 
-export type AttendanceStatus = 'present' | 'late' | 'manual' | 'override';
+export type AttendanceStatus = 'present' | 'late' | 'manual' | 'override' | 'excused';
 export type AttendanceMethod = 'gps' | 'override_code' | 'manual' | 'instructor_approved';
 
 export interface AttendanceRecord {
@@ -116,8 +117,38 @@ export interface StudentAttendanceSummary {
   section?: string | null;
   present_count: number;
   late_count: number;
+  excused_count: number;
   manual_count: number;
   override_count: number;
   total_sessions: number;
   attendance_percentage: number;
+}
+
+export interface GradeCategory {
+  id: string;
+  name: string;
+  weight_percent: number;
+  max_score: number;
+  attendance_linked: boolean;
+  position: number;
+  created_at: string;
+}
+
+export interface GradeEntry {
+  id: string;
+  category_id: string;
+  student_id: string;
+  score: number;
+  notes?: string | null;
+  updated_by?: string | null;
+  updated_at: string;
+}
+
+export interface GradeScaleBand {
+  id: string;
+  label: string;
+  min_percent: number;
+  max_percent: number;
+  color?: string | null;
+  position: number;
 }

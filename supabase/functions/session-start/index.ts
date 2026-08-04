@@ -12,9 +12,12 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const sessionType = body.sessionType === "practical" ? "practical" : "theory";
+    const sessionType = String(body.sessionType ?? "").trim();
+    const courseName = String(body.courseName ?? "").trim();
     const lat = Number(body.lat);
     const lng = Number(body.lng);
+    if (!sessionType) return withCors({ error: "Session type is required." }, 400);
+    if (!courseName) return withCors({ error: "Course is required." }, 400);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return withCors({ error: "Your current location is required to start a session." }, 400);
     }
@@ -33,6 +36,7 @@ Deno.serve(async (req: Request) => {
       .insert({
         session_date: body.sessionDate || new Date().toISOString().slice(0, 10),
         session_type: sessionType,
+        course_name: courseName,
         started_by: auth.staff.id,
         anchor_lat: lat,
         anchor_lng: lng,

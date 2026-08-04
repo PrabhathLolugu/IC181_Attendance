@@ -7,6 +7,7 @@ import { DashboardPage } from './features/dashboard/DashboardPage';
 import { LiveSessionPage } from './features/attendance/LiveSessionPage';
 import { StudentsPage } from './features/students/StudentsPage';
 import { ReportsPage } from './features/reports/ReportsPage';
+import { GradesPage } from './features/grades/GradesPage';
 import { AdminPage } from './features/admin/AdminPage';
 import { AuditPage } from './features/admin/AuditPage';
 import { SettingsPage } from './features/settings/SettingsPage';
@@ -126,6 +127,7 @@ export default function App() {
       case 'live_session': return <LiveSessionPage staff={staff} />;
       case 'students': return <StudentsPage staff={staff} />;
       case 'reports': return <ReportsPage staff={staff} />;
+      case 'grades': return <GradesPage staff={staff} />;
       case 'admin': return <AdminPage staff={staff} />;
       case 'audit': return <AuditPage />;
       case 'settings': return <SettingsPage />;
