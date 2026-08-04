@@ -2,6 +2,12 @@
   command = "npm run build"
   publish = "dist"
 
+[build.environment]
+  # VITE_-prefixed vars are meant to ship in the client bundle — that's how Supabase's
+  # publishable-key model works (RLS enforces security, not key secrecy). Without this,
+  # Netlify's secret scanner flags its own presence in the output it just built.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_URL,VITE_SUPABASE_PUBLISHABLE_KEY"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
