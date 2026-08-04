@@ -12,6 +12,10 @@ Deno.serve(async (req: Request) => {
   if ("error" in auth) return withCors({ error: auth.error }, 401);
 
   try {
+    const body = await req.json().catch(() => ({}));
+    const fromDate: string | undefined = body.fromDate || undefined;
+    const toDate: string | undefined = body.toDate || undefined;
+
     const db = serviceClient();
 
     const { data: settings } = await db.from("course_settings").select("course_name").single();
@@ -20,12 +24,15 @@ Deno.serve(async (req: Request) => {
       .select("roll_number, name, section")
       .eq("status", "active")
       .order("roll_number");
-    const { data: sessions } = await db
-      .from("sessions")
-      .select("id, session_date, session_type, section_filter")
-      .eq("status", "ended")
-      .order("session_date");
-    const { data: records } = await db.from("attendance_records").select("session_id, roll_number, status");
+
+    let sessionQuery = db.from("sessions").select("id, session_date, session_type, course_name, section_filter").eq("status", "ended").order("session_date");
+    if (fromDate) sessionQuery = sessionQuery.gte("session_date", fromDate);
+    if (toDate) sessionQuery = sessionQuery.lte("session_date", toDate);
+    const { data: sessions } = await sessionQuery;
+
+    const { data: records } = sessions?.length
+      ? await db.from("attendance_records").select("session_id, roll_number, status").in("session_id", sessions.map((s) => s.id))
+      : { data: [] };
 
     const byStudentSession = new Map<string, string>();
     for (const r of records ?? []) byStudentSession.set(`${r.roll_number}|${r.session_id}`, r.status);
@@ -39,17 +46,20 @@ Deno.serve(async (req: Request) => {
       { header: "Name", key: "name", width: 26 },
       { header: "Section", key: "section", width: 10 },
       ...(sessions ?? []).map((s) => ({
-        header: `${s.session_date} (${s.session_type === "practical" ? "P" : "T"})`,
+        header: `${s.session_date} · ${s.course_name} (${s.session_type})`,
         key: s.id,
-        width: 14,
+        width: 16,
       })),
       { header: "Present %", key: "pct", width: 12 },
     ];
     sheet.getRow(1).font = { bold: true };
 
+    const LABELS: Record<string, string> = { late: "Late", manual: "Manual", override: "Override", excused: "Excused", present: "P" };
+
     for (const student of students ?? []) {
       const applicableSessions = (sessions ?? []).filter((s) => !s.section_filter || s.section_filter === student.section);
       let presentCount = 0;
+      let excusedCount = 0;
       const row: Record<string, string | number> = {
         roll: student.roll_number,
         name: student.name,
@@ -62,21 +72,25 @@ Deno.serve(async (req: Request) => {
           continue;
         }
         const status = byStudentSession.get(`${student.roll_number}|${s.id}`);
-        if (status) {
+        if (status === "excused") {
+          excusedCount += 1;
+          row[s.id] = "Excused";
+        } else if (status) {
           presentCount += 1;
-          row[s.id] = status === "late" ? "Late" : status === "manual" ? "Manual" : status === "override" ? "Override" : "P";
+          row[s.id] = LABELS[status] ?? "P";
         } else {
           row[s.id] = "A";
         }
       }
-      row.pct = applicableSessions.length > 0 ? Math.round((presentCount / applicableSessions.length) * 1000) / 10 : 0;
+      const denominator = applicableSessions.length - excusedCount;
+      row.pct = denominator > 0 ? Math.round((presentCount / denominator) * 1000) / 10 : 0;
       sheet.addRow(row);
     }
 
     const buffer = await workbook.xlsx.writeBuffer();
 
     await db.storage.createBucket(BUCKET, { public: false }).catch(() => {});
-    const path = "Attendance.xlsx";
+    const path = fromDate || toDate ? `Attendance_${fromDate || "start"}_to_${toDate || "end"}.xlsx` : "Attendance.xlsx";
     const { error: uploadErr } = await db.storage.from(BUCKET).upload(path, buffer, {
       contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       upsert: true,
