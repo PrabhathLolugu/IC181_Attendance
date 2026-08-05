@@ -7,6 +7,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { AttendanceTable } from '../../components/shared/AttendanceTable';
 import { ManualAttendanceModal } from '../../components/shared/ManualAttendanceModal';
 import { pctColor, formatDate, formatDateTime } from '../../lib/utils';
+import { SESSION_TYPE_PRESETS } from '../../types';
 import type { Staff, Session, Student, StudentAttendanceSummary, AttendanceRecord } from '../../types';
 
 interface Props { staff: Staff; courseName: string; }
@@ -220,16 +221,19 @@ export function ReportsPage({ staff, courseName }: Props) {
 function SessionDetailModal({
   staff, session, onClose, onChanged,
 }: { staff: Staff; session: Session; onClose: () => void; onChanged: () => void }) {
+  const [current, setCurrent] = useState(session);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showManual, setShowManual] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('attendance_records').select('*').eq('session_id', session.id).order('marked_at', { ascending: false });
+    const { data } = await supabase.from('attendance_records').select('*').eq('session_id', current.id).order('marked_at', { ascending: false });
     setRecords(data ?? []);
     setLoading(false);
-  }, [session.id]);
+  }, [current.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -238,21 +242,183 @@ function SessionDetailModal({
     onChanged();
   }
 
+  function handleEdited(updated: Session) {
+    setCurrent(updated);
+    setShowEdit(false);
+    onChanged();
+  }
+
+  async function handleDelete() {
+    const count = records.length;
+    const warning = count > 0
+      ? ` This will permanently remove it and all ${count} attendance record${count === 1 ? '' : 's'} tied to it.`
+      : '';
+    if (!window.confirm(`Delete this session?${warning} This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await callFunction('session-delete', { sessionId: current.id });
+      toast('success', 'Session deleted.');
+      onChanged();
+      onClose();
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Could not delete the session.');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <Modal
       open
       onClose={onClose}
       size="lg"
-      title={`${session.course_name} — ${session.session_type}`}
-      subtitle={`${formatDateTime(session.created_at)} · ${session.group_filter || 'All groups'} · ${session.status}`}
-      footer={<button onClick={() => setShowManual(true)} className="btn-secondary btn-sm">+ Add Student</button>}
+      title={`${current.course_name} — ${current.session_type}`}
+      subtitle={`${formatDateTime(current.created_at)} · ${current.group_filter || 'All groups'} · ${current.status}`}
+      footer={
+        <>
+          {staff.role === 'admin' && (
+            <button onClick={handleDelete} disabled={deleting} className="btn-danger btn-sm mr-auto">
+              {deleting ? 'Deleting…' : 'Delete Session'}
+            </button>
+          )}
+          <button onClick={() => setShowEdit(true)} className="btn-secondary btn-sm">Edit Session</button>
+          <button onClick={() => setShowManual(true)} className="btn-secondary btn-sm">+ Add Student</button>
+        </>
+      }
     >
       {loading ? (
         <div className="py-10 text-center text-sm text-slate-400">Loading…</div>
       ) : (
         <AttendanceTable staff={staff} records={records} onChanged={handleChanged} title="" emptyText="No attendance recorded for this session." />
       )}
-      <ManualAttendanceModal open={showManual} onClose={() => setShowManual(false)} session={session} onMarked={handleChanged} />
+      <ManualAttendanceModal open={showManual} onClose={() => setShowManual(false)} session={current} onMarked={handleChanged} />
+      <EditSessionModal open={showEdit} onClose={() => setShowEdit(false)} session={current} onSaved={handleEdited} />
+    </Modal>
+  );
+}
+
+function EditSessionModal({
+  open, onClose, session, onSaved,
+}: { open: boolean; onClose: () => void; session: Session; onSaved: (updated: Session) => void }) {
+  const [courseName, setCourseName] = useState(session.course_name);
+  const [sessionType, setSessionType] = useState(session.session_type);
+  const [sessionDate, setSessionDate] = useState(session.session_date);
+  const [audience, setAudience] = useState<'general' | 'group'>(session.group_filter ? 'group' : 'general');
+  const [groupFilter, setGroupFilter] = useState(session.group_filter ?? '');
+  const [radiusMeters, setRadiusMeters] = useState(session.radius_meters);
+  const [allowOverride, setAllowOverride] = useState(session.allow_gps_override);
+  const [notes, setNotes] = useState(session.notes ?? '');
+  const [groupChoices, setGroupChoices] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setCourseName(session.course_name);
+    setSessionType(session.session_type);
+    setSessionDate(session.session_date);
+    setAudience(session.group_filter ? 'group' : 'general');
+    setGroupFilter(session.group_filter ?? '');
+    setRadiusMeters(session.radius_meters);
+    setAllowOverride(session.allow_gps_override);
+    setNotes(session.notes ?? '');
+    setError('');
+    supabase.from('students').select('group_label').eq('status', 'active').not('group_label', 'is', null).then(({ data }) => {
+      setGroupChoices(Array.from(new Set((data ?? []).map((g) => g.group_label as string))).sort());
+    });
+  }, [open, session]);
+
+  async function handleSave() {
+    setError('');
+    const finalCourse = courseName.trim();
+    const finalType = sessionType.trim();
+    const finalGroup = audience === 'group' ? groupFilter.trim().toUpperCase() : '';
+    if (!finalCourse) { setError('Please name the course.'); return; }
+    if (!finalType) { setError('Please name the session type.'); return; }
+    if (audience === 'group' && !finalGroup) { setError('Please pick or type a group.'); return; }
+    if (!sessionDate) { setError('Please pick a date.'); return; }
+    setLoading(true);
+    try {
+      const res = await callFunction<{ session: Session }>('session-edit', {
+        sessionId: session.id,
+        courseName: finalCourse,
+        sessionType: finalType,
+        sessionDate,
+        groupFilter: finalGroup || undefined,
+        notes: notes.trim() || undefined,
+        radiusMeters,
+        allowGpsOverride: allowOverride,
+      });
+      toast('success', 'Session updated.');
+      onSaved(res.session);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not update the session.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Edit Session" subtitle="Fix a mistake — course, type, date, audience, or GPS settings." size="sm">
+      <div className="flex flex-col gap-4">
+        <div>
+          <label className="label">Course</label>
+          <input className="input-base" value={courseName} onChange={(e) => setCourseName(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">Session Type</label>
+          <input className="input-base" value={sessionType} onChange={(e) => setSessionType(e.target.value)} list="edit-session-type-presets" />
+          <datalist id="edit-session-type-presets">
+            {SESSION_TYPE_PRESETS.map((t) => <option key={t} value={t} />)}
+          </datalist>
+        </div>
+        <div>
+          <label className="label">Date</label>
+          <input type="date" className="input-base" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">Audience</label>
+          <select value={audience} onChange={(e) => setAudience(e.target.value as 'general' | 'group')} className="input-base">
+            <option value="general">General — everyone can attend</option>
+            <option value="group">Specific group</option>
+          </select>
+          {audience === 'group' && (
+            <div className="mt-2">
+              <input
+                className="input-base"
+                placeholder="e.g. I"
+                maxLength={3}
+                value={groupFilter}
+                onChange={(e) => setGroupFilter(e.target.value)}
+                list="edit-session-group-choices"
+              />
+              <datalist id="edit-session-group-choices">
+                {groupChoices.map((g) => <option key={g} value={g} />)}
+              </datalist>
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="label">GPS Radius (m)</label>
+            <input type="number" min={10} className="input-base" value={radiusMeters} onChange={(e) => setRadiusMeters(Number(e.target.value))} />
+          </div>
+          <div className="flex items-end pb-2.5">
+            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+              <input type="checkbox" checked={allowOverride} onChange={(e) => setAllowOverride(e.target.checked)} className="rounded" />
+              Allow GPS override
+            </label>
+          </div>
+        </div>
+        <div>
+          <label className="label">Notes</label>
+          <input className="input-base" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
+        </div>
+        {error && <div className="px-4 py-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl text-red-700 dark:text-red-400 text-xs">{error}</div>}
+        <button onClick={handleSave} disabled={loading} className="btn-primary w-full h-11">
+          {loading ? 'Saving…' : 'Save Changes'}
+        </button>
+      </div>
     </Modal>
   );
 }
