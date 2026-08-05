@@ -8,6 +8,7 @@ import type { Staff, Student, StudentAttendanceSummary, StudentStatus } from '..
 interface Props { staff: Staff; courseName: string; }
 
 const PAGE_SIZE = 20;
+const UNASSIGNED = '__unassigned__';
 const emptyForm = { roll_number: '', name: '', email: '', phone: '', department: '', program: '', semester: '', group_label: '', batch: '' };
 
 export function StudentsPage({ staff, courseName }: Props) {
@@ -15,6 +16,12 @@ export function StudentsPage({ staff, courseName }: Props) {
   const [summaries, setSummaries] = useState<Record<string, StudentAttendanceSummary>>({});
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StudentStatus | 'all'>('active');
+  const [groupFilter, setGroupFilter] = useState('');
+  const [deptFilter, setDeptFilter] = useState('');
+  const [minPct, setMinPct] = useState('');
+  const [maxPct, setMaxPct] = useState('');
+  const [groupChoices, setGroupChoices] = useState<string[]>([]);
+  const [deptChoices, setDeptChoices] = useState<string[]>([]);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -25,6 +32,13 @@ export function StudentsPage({ staff, courseName }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkGroup, setBulkGroup] = useState('');
 
+  useEffect(() => {
+    supabase.from('students').select('group_label, department').eq('status', 'active').then(({ data }) => {
+      setGroupChoices(Array.from(new Set((data ?? []).map((d) => d.group_label).filter(Boolean) as string[])).sort());
+      setDeptChoices(Array.from(new Set((data ?? []).map((d) => d.department).filter(Boolean) as string[])).sort());
+    });
+  }, []);
+
   const loadSummaries = useCallback(async () => {
     const { data: summaryRows } = await supabase.rpc('student_attendance_summary', { p_course_name: courseName });
     const map: Record<string, StudentAttendanceSummary> = {};
@@ -32,18 +46,41 @@ export function StudentsPage({ staff, courseName }: Props) {
     setSummaries(map);
   }, [courseName]);
 
+  const pctFilterActive = minPct !== '' || maxPct !== '';
+
   const load = useCallback(async () => {
     setLoading(true);
+
+    // The attendance % isn't a column on students -- it only exists in the
+    // course-scoped summary RPC -- so a % filter needs that resolved first,
+    // to narrow the roster query by the matching roll numbers.
+    let pctSummaryMap: Record<string, StudentAttendanceSummary> | null = null;
     let query = supabase.from('students').select('*', { count: 'exact' }).order('roll_number');
     if (statusFilter !== 'all') query = query.eq('status', statusFilter);
     if (search.trim()) query = query.or(`roll_number.ilike.%${search}%,name.ilike.%${search}%`);
+    if (groupFilter === UNASSIGNED) query = query.is('group_label', null);
+    else if (groupFilter) query = query.eq('group_label', groupFilter);
+    if (deptFilter) query = query.eq('department', deptFilter);
+    if (pctFilterActive) {
+      const { data: summaryRows } = await supabase.rpc('student_attendance_summary', { p_course_name: courseName });
+      pctSummaryMap = {};
+      (summaryRows as StudentAttendanceSummary[] ?? []).forEach((s) => { pctSummaryMap![s.roll_number] = s; });
+      const min = minPct === '' ? -Infinity : Number(minPct);
+      const max = maxPct === '' ? Infinity : Number(maxPct);
+      const qualifying = Object.values(pctSummaryMap)
+        .filter((s) => s.attendance_percentage >= min && s.attendance_percentage <= max)
+        .map((s) => s.roll_number);
+      query = query.in('roll_number', qualifying.length > 0 ? qualifying : ['__none__']);
+    }
+
     const { data, count } = await query.range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
     setStudents(data ?? []);
     setTotal(count ?? 0);
     setSelected(new Set());
-    await loadSummaries();
+    if (pctSummaryMap) setSummaries(pctSummaryMap);
+    else await loadSummaries();
     setLoading(false);
-  }, [search, statusFilter, page, loadSummaries]);
+  }, [search, statusFilter, groupFilter, deptFilter, pctFilterActive, minPct, maxPct, page, courseName, loadSummaries]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -124,6 +161,39 @@ export function StudentsPage({ staff, courseName }: Props) {
           <option value="deleted">Removed</option>
           <option value="all">All</option>
         </select>
+        <select value={groupFilter} onChange={(e) => { setGroupFilter(e.target.value); setPage(0); }} className="input-base w-auto">
+          <option value="">All Groups</option>
+          <option value={UNASSIGNED}>Unassigned</option>
+          {groupChoices.map((g) => <option key={g} value={g}>Group {g}</option>)}
+        </select>
+        <select value={deptFilter} onChange={(e) => { setDeptFilter(e.target.value); setPage(0); }} className="input-base w-auto">
+          <option value="">All Departments</option>
+          {deptChoices.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-slate-500 whitespace-nowrap">Attendance %</label>
+          <input
+            type="number" min={0} max={100} placeholder="Min"
+            className="input-base w-20"
+            value={minPct}
+            onChange={(e) => { setMinPct(e.target.value); setPage(0); }}
+          />
+          <span className="text-xs text-slate-400">to</span>
+          <input
+            type="number" min={0} max={100} placeholder="Max"
+            className="input-base w-20"
+            value={maxPct}
+            onChange={(e) => { setMaxPct(e.target.value); setPage(0); }}
+          />
+        </div>
+        {(groupFilter || deptFilter || pctFilterActive) && (
+          <button
+            onClick={() => { setGroupFilter(''); setDeptFilter(''); setMinPct(''); setMaxPct(''); setPage(0); }}
+            className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {selected.size > 0 && (
