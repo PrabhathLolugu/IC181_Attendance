@@ -19,6 +19,7 @@ export function StudentsPage({ staff, courseName }: Props) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Student | null>(null);
+  const [viewing, setViewing] = useState<Student | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -158,8 +159,8 @@ export function StudentsPage({ staff, courseName }: Props) {
               students.map((s) => {
                 const summary = summaries[s.roll_number];
                 return (
-                  <tr key={s.id}>
-                    <td><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} /></td>
+                  <tr key={s.id} onClick={() => setViewing(s)} className="cursor-pointer">
+                    <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} /></td>
                     <td className="font-mono font-medium">{s.roll_number}</td>
                     <td>{s.name}</td>
                     <td className="text-slate-500 dark:text-slate-400 text-xs">{[s.department, s.program].filter(Boolean).join(' · ') || '—'}</td>
@@ -170,7 +171,7 @@ export function StudentsPage({ staff, courseName }: Props) {
                       ) : '—'}
                     </td>
                     <td><span className="badge-slate">{s.status}</span></td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-2 justify-end">
                         <button onClick={() => setEditing(s)} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Edit</button>
                         {s.status === 'deleted' ? (
@@ -210,7 +211,71 @@ export function StudentsPage({ staff, courseName }: Props) {
         onSaved={() => { setEditing(null); load(); }}
       />
       <ImportModal open={showImport} onClose={() => setShowImport(false)} staff={staff} onImported={() => { setShowImport(false); load(); }} />
+      <StudentDetailModal
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        student={viewing}
+        summary={viewing ? summaries[viewing.roll_number] : undefined}
+        courseName={courseName}
+        onEdit={() => { setEditing(viewing); setViewing(null); }}
+      />
     </main>
+  );
+}
+
+function StudentDetailModal({
+  open, onClose, student, summary, courseName, onEdit,
+}: { open: boolean; onClose: () => void; student: Student | null; summary?: StudentAttendanceSummary; courseName: string; onEdit: () => void }) {
+  if (!student) return null;
+  return (
+    <Modal open={open} onClose={onClose} title={student.name} subtitle={`${student.roll_number} · ${courseName}`} size="sm">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-3">
+          {student.group_label ? <span className="badge-blue">Group {student.group_label}</span> : <span className="badge-slate">Unassigned group</span>}
+          <span className="badge-slate">{student.status}</span>
+          {summary && <span className={`font-semibold text-sm ${pctColor(summary.attendance_percentage)}`}>{summary.attendance_percentage}% attendance</span>}
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <DetailField label="Roll Number" value={student.roll_number} />
+          <DetailField label="Name" value={student.name} />
+          <DetailField label="Email" value={student.email} />
+          <DetailField label="Phone" value={student.phone} />
+          <DetailField label="Department" value={student.department} />
+          <DetailField label="Program" value={student.program} />
+          <DetailField label="Semester" value={student.semester} />
+          <DetailField label="Batch" value={student.batch} />
+          <DetailField label="Group" value={student.group_label} />
+          <DetailField label="Status" value={student.status} />
+        </div>
+        {summary && (
+          <div className="grid grid-cols-4 gap-2 pt-3 border-t border-slate-100 dark:border-[#21262d]">
+            <MiniStat label="Present" value={summary.present_count} />
+            <MiniStat label="Excused" value={summary.excused_count} />
+            <MiniStat label="Manual" value={summary.manual_count} />
+            <MiniStat label="Override" value={summary.override_count} />
+          </div>
+        )}
+        <button onClick={onEdit} className="btn-secondary w-full h-10">Edit Details</button>
+      </div>
+    </Modal>
+  );
+}
+
+function DetailField({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <p className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">{label}</p>
+      <p className="text-sm text-slate-800 dark:text-slate-200 mt-0.5">{value || <span className="text-slate-300 dark:text-slate-600">—</span>}</p>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="text-center">
+      <p className="text-lg font-bold text-slate-900 dark:text-slate-100 font-tabular">{value}</p>
+      <p className="text-[10px] text-slate-400 uppercase tracking-wide">{label}</p>
+    </div>
   );
 }
 

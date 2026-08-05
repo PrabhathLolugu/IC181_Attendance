@@ -445,6 +445,7 @@ function StudentDetailModal({
   staff, summary, courseName, onClose, onChanged,
 }: { staff: Staff; summary: StudentAttendanceSummary; courseName: string; onClose: () => void; onChanged: () => void }) {
   const [rows, setRows] = useState<MergedDay[]>([]);
+  const [profile, setProfile] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -452,13 +453,15 @@ function StudentDetailModal({
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: allSessions }, { data: myRecords }] = await Promise.all([
+    const [{ data: allSessions }, { data: myRecords }, { data: studentRow }] = await Promise.all([
       supabase.from('sessions').select('*').eq('status', 'ended').eq('course_name', courseName).order('session_date', { ascending: false }),
       supabase.from('attendance_records').select('*').eq('student_id', summary.student_id),
+      supabase.from('students').select('*').eq('id', summary.student_id).maybeSingle(),
     ]);
     const recordBySession = new Map((myRecords ?? []).map((r) => [r.session_id, r]));
     const applicable = (allSessions ?? []).filter((s) => !s.group_filter || s.group_filter === summary.group_label);
     setRows(applicable.map((s) => ({ session: s, record: recordBySession.get(s.id) ?? null })));
+    setProfile(studentRow ?? null);
     setLoading(false);
   }, [summary.student_id, summary.group_label, courseName]);
 
@@ -507,6 +510,16 @@ function StudentDetailModal({
       title={summary.name}
       subtitle={`${summary.roll_number} · ${summary.group_label ?? 'No group'} · ${summary.attendance_percentage}% overall`}
     >
+      {profile && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 mb-4 pb-4 border-b border-slate-100 dark:border-[#21262d]">
+          <ProfileField label="Email" value={profile.email} />
+          <ProfileField label="Phone" value={profile.phone} />
+          <ProfileField label="Department" value={profile.department} />
+          <ProfileField label="Program" value={profile.program} />
+          <ProfileField label="Semester" value={profile.semester} />
+          <ProfileField label="Batch" value={profile.batch} />
+        </div>
+      )}
       {loading ? (
         <div className="py-10 text-center text-sm text-slate-400">Loading…</div>
       ) : rows.length === 0 ? (
@@ -564,6 +577,15 @@ function StudentDetailModal({
         </div>
       )}
     </Modal>
+  );
+}
+
+function ProfileField({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <p className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">{label}</p>
+      <p className="text-sm text-slate-800 dark:text-slate-200 mt-0.5">{value || <span className="text-slate-300 dark:text-slate-600">—</span>}</p>
+    </div>
   );
 }
 
