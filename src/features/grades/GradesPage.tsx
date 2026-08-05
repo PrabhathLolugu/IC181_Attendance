@@ -4,9 +4,9 @@ import { Modal } from '../../components/ui/Modal';
 import { toast } from '../../components/ui/Toast';
 import type { Staff, Student, GradeCategory, GradeEntry, GradeScaleBand, StudentAttendanceSummary } from '../../types';
 
-interface Props { staff: Staff; }
+interface Props { staff: Staff; courseName: string; }
 
-export function GradesPage({ staff }: Props) {
+export function GradesPage({ staff, courseName }: Props) {
   const [categories, setCategories] = useState<GradeCategory[]>([]);
   const [bands, setBands] = useState<GradeScaleBand[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -22,21 +22,21 @@ export function GradesPage({ staff }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data: cats }, { data: bandRows }, { data: studentRows }, { data: entryRows }, { data: summaryRows }] = await Promise.all([
-      supabase.from('grade_categories').select('*').order('position'),
+      supabase.from('grade_categories').select('*').eq('course_name', courseName).order('position'),
       supabase.from('grade_scale_bands').select('*').order('position'),
       supabase.from('students').select('*').eq('status', 'active').order('roll_number'),
       supabase.from('grade_entries').select('*'),
-      supabase.from('student_attendance_summary').select('student_id, attendance_percentage'),
+      supabase.rpc('student_attendance_summary', { p_course_name: courseName }),
     ]);
     setCategories(cats ?? []);
     setBands(bandRows ?? []);
     setStudents(studentRows ?? []);
     setEntries(entryRows ?? []);
     const pctMap: Record<string, number> = {};
-    (summaryRows ?? []).forEach((s: Pick<StudentAttendanceSummary, 'student_id' | 'attendance_percentage'>) => { pctMap[s.student_id] = s.attendance_percentage; });
+    ((summaryRows as StudentAttendanceSummary[]) ?? []).forEach((s) => { pctMap[s.student_id] = s.attendance_percentage; });
     setAttendancePct(pctMap);
     setLoading(false);
-  }, []);
+  }, [courseName]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -118,7 +118,7 @@ export function GradesPage({ staff }: Props) {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Grades</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Weighted scoring across categories, ranked and graded.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{courseName} · Weighted scoring across categories, ranked and graded.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => setShowCategories(true)} className="btn-secondary btn-sm">Categories</button>
@@ -205,7 +205,7 @@ export function GradesPage({ staff }: Props) {
         </>
       )}
 
-      <CategoriesModal open={showCategories} onClose={() => setShowCategories(false)} staff={staff} categories={categories} onChanged={load} />
+      <CategoriesModal open={showCategories} onClose={() => setShowCategories(false)} staff={staff} courseName={courseName} categories={categories} onChanged={load} />
       <GradeScaleModal open={showScale} onClose={() => setShowScale(false)} bands={bands} onChanged={load} />
       <ImportScoresModal open={showImport} onClose={() => setShowImport(false)} staff={staff} categories={categories} students={students} onImported={load} />
     </main>
@@ -244,8 +244,8 @@ function ScoreCell({ value, maxScore, onSave }: { value: number | null; maxScore
 }
 
 function CategoriesModal({
-  open, onClose, staff, categories, onChanged,
-}: { open: boolean; onClose: () => void; staff: Staff; categories: GradeCategory[]; onChanged: () => void }) {
+  open, onClose, staff, courseName, categories, onChanged,
+}: { open: boolean; onClose: () => void; staff: Staff; courseName: string; categories: GradeCategory[]; onChanged: () => void }) {
   const [form, setForm] = useState({ name: '', weight_percent: 10, max_score: 100, attendance_linked: false });
 
   async function handleAdd() {
@@ -257,6 +257,7 @@ function CategoriesModal({
       attendance_linked: form.attendance_linked,
       position: categories.length,
       created_by: staff.id,
+      course_name: courseName,
     });
     if (error) { toast('error', 'Could not add category.'); return; }
     setForm({ name: '', weight_percent: 10, max_score: 100, attendance_linked: false });

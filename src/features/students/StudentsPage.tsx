@@ -5,12 +5,12 @@ import { toast } from '../../components/ui/Toast';
 import { pctColor } from '../../lib/utils';
 import type { Staff, Student, StudentAttendanceSummary, StudentStatus } from '../../types';
 
-interface Props { staff: Staff; }
+interface Props { staff: Staff; courseName: string; }
 
 const PAGE_SIZE = 20;
 const emptyForm = { roll_number: '', name: '', email: '', phone: '', department: '', program: '', semester: '', group_label: '', batch: '' };
 
-export function StudentsPage({ staff }: Props) {
+export function StudentsPage({ staff, courseName }: Props) {
   const [students, setStudents] = useState<Student[]>([]);
   const [summaries, setSummaries] = useState<Record<string, StudentAttendanceSummary>>({});
   const [search, setSearch] = useState('');
@@ -25,11 +25,11 @@ export function StudentsPage({ staff }: Props) {
   const [bulkGroup, setBulkGroup] = useState('');
 
   const loadSummaries = useCallback(async () => {
-    const { data: summaryRows } = await supabase.from('student_attendance_summary').select('*');
+    const { data: summaryRows } = await supabase.rpc('student_attendance_summary', { p_course_name: courseName });
     const map: Record<string, StudentAttendanceSummary> = {};
-    (summaryRows ?? []).forEach((s) => { map[s.roll_number] = s; });
+    (summaryRows ?? []).forEach((s: StudentAttendanceSummary) => { map[s.roll_number] = s; });
     setSummaries(map);
-  }, []);
+  }, [courseName]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,7 +101,7 @@ export function StudentsPage({ staff }: Props) {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Students</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{total} {statusFilter === 'all' ? '' : statusFilter} students</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{total} {statusFilter === 'all' ? '' : statusFilter} students · Attendance % shown for {courseName}</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowImport(true)} className="btn-secondary btn-sm">Import CSV</button>

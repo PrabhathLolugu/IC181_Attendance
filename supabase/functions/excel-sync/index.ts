@@ -15,19 +15,19 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const fromDate: string | undefined = body.fromDate || undefined;
     const toDate: string | undefined = body.toDate || undefined;
+    const courseName: string = body.courseName || "IC181";
 
     const db = serviceClient();
 
-    const { data: settings } = await db.from("course_settings").select("course_name").single();
     const { data: students } = await db
       .from("students")
       .select("roll_number, name, group_label")
       .eq("status", "active")
       .order("roll_number");
-    const { data: summaries } = await db.from("student_attendance_summary").select("roll_number, attendance_percentage");
-    const pctByRoll = new Map((summaries ?? []).map((s) => [s.roll_number, s.attendance_percentage]));
+    const { data: summaries } = await db.rpc("student_attendance_summary", { p_course_name: courseName });
+    const pctByRoll = new Map((summaries ?? []).map((s: { roll_number: string; attendance_percentage: number }) => [s.roll_number, s.attendance_percentage]));
 
-    let sessionQuery = db.from("sessions").select("id, session_date, session_type, course_name, group_filter, round_id").eq("status", "ended").order("session_date");
+    let sessionQuery = db.from("sessions").select("id, session_date, session_type, course_name, group_filter, round_id").eq("status", "ended").eq("course_name", courseName).order("session_date");
     if (fromDate) sessionQuery = sessionQuery.gte("session_date", fromDate);
     if (toDate) sessionQuery = sessionQuery.lte("session_date", toDate);
     const { data: sessions } = await sessionQuery;
@@ -40,7 +40,7 @@ Deno.serve(async (req: Request) => {
     for (const r of records ?? []) byStudentSession.set(`${r.roll_number}|${r.session_id}`, r.status);
 
     const workbook = new ExcelJS.Workbook();
-    const sheetName = (settings?.course_name || "Attendance").slice(0, 31);
+    const sheetName = courseName.slice(0, 31);
     const sheet = workbook.addWorksheet(sheetName);
 
     sheet.columns = [
@@ -80,7 +80,10 @@ Deno.serve(async (req: Request) => {
     const buffer = await workbook.xlsx.writeBuffer();
 
     await db.storage.createBucket(BUCKET, { public: false }).catch(() => {});
-    const path = fromDate || toDate ? `Attendance_${fromDate || "start"}_to_${toDate || "end"}.xlsx` : "Attendance.xlsx";
+    const safeCourse = courseName.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const path = fromDate || toDate
+      ? `${safeCourse}_${fromDate || "start"}_to_${toDate || "end"}.xlsx`
+      : `${safeCourse}_Attendance.xlsx`;
     const { error: uploadErr } = await db.storage.from(BUCKET).upload(path, buffer, {
       contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       upsert: true,

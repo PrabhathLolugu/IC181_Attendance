@@ -9,12 +9,29 @@ import type { Staff } from '../../types';
 interface Props {
   staff: Staff;
   courseName: string;
+  knownCourses: string[];
+  onCourseChange: (course: string) => void;
   onLogout: () => void;
 }
 
-export function TopBar({ staff, courseName, onLogout }: Props) {
+export function TopBar({ staff, courseName, knownCourses, onCourseChange, onLogout }: Props) {
   const [showUser, setShowUser] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showCoursePicker, setShowCoursePicker] = useState(false);
+  const [customCourse, setCustomCourse] = useState('');
+
+  function selectCourse(value: string) {
+    if (value === '__custom__') return;
+    onCourseChange(value);
+    setShowCoursePicker(false);
+  }
+
+  function submitCustomCourse() {
+    if (!customCourse.trim()) return;
+    onCourseChange(customCourse.trim());
+    setCustomCourse('');
+    setShowCoursePicker(false);
+  }
 
   return (
     <header className="sticky top-0 z-40 flex items-center justify-between h-14 px-6 bg-white/90 dark:bg-[#0d1117]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-[#21262d] flex-shrink-0">
@@ -28,7 +45,43 @@ export function TopBar({ staff, courseName, onLogout }: Props) {
           <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight">SmartAttend</span>
         </div>
         <span className="hidden sm:block text-slate-300 dark:text-slate-700 text-xs">|</span>
-        <span className="hidden sm:block text-xs text-slate-500 dark:text-slate-400 truncate">{courseName}</span>
+
+        <div className="relative">
+          <button
+            onClick={() => setShowCoursePicker((v) => !v)}
+            className="flex items-center gap-1.5 px-2 py-1 -ml-2 rounded-lg hover:bg-slate-100 dark:hover:bg-[#21262d] transition-colors"
+          >
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[160px]">{courseName}</span>
+            <svg className="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+          </button>
+          {showCoursePicker && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowCoursePicker(false)} />
+              <div className="absolute left-0 top-9 z-50 w-64 bg-white dark:bg-[#161b22] border border-slate-200 dark:border-[#30363d] rounded-2xl shadow-xl animate-scale-in overflow-hidden p-2">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-2 pt-1 pb-2">Viewing course</p>
+                {knownCourses.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => selectCourse(c)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${c === courseName ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 font-medium' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#21262d]'}`}
+                  >
+                    {c}
+                  </button>
+                ))}
+                <div className="flex gap-1.5 mt-1 px-1">
+                  <input
+                    value={customCourse}
+                    onChange={(e) => setCustomCourse(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && submitCustomCourse()}
+                    placeholder="New course / test class…"
+                    className="input-base text-xs flex-1"
+                  />
+                  <button onClick={submitCustomCourse} className="btn-primary btn-sm">Go</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="relative">

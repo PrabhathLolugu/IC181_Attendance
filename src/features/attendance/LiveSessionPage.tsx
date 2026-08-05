@@ -10,9 +10,9 @@ import { timeAgo, formatTime } from '../../lib/utils';
 import { SESSION_TYPE_PRESETS } from '../../types';
 import type { Staff, Session, AttendanceRecord, GpsOverrideRequest, CourseSettings, ActivityRound } from '../../types';
 
-interface Props { staff: Staff; }
+interface Props { staff: Staff; courseName: string; }
 
-export function LiveSessionPage({ staff }: Props) {
+export function LiveSessionPage({ staff, courseName }: Props) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -31,19 +31,22 @@ export function LiveSessionPage({ staff }: Props) {
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   const loadSessions = useCallback(async () => {
-    const { data } = await supabase.from('sessions').select('*').eq('status', 'active').order('created_at', { ascending: false });
+    const { data } = await supabase.from('sessions').select('*').eq('status', 'active').eq('course_name', courseName).order('created_at', { ascending: false });
     setSessions(data ?? []);
     setSelectedId((prev) => (prev && data?.some((s) => s.id === prev) ? prev : data?.[0]?.id ?? null));
-  }, []);
+  }, [courseName]);
 
   const loadPickerData = useCallback(async () => {
-    const [{ data: groups }, { data: rounds }] = await Promise.all([
+    const [{ data: groups }, { data: roundSessions }] = await Promise.all([
       supabase.from('students').select('group_label').eq('status', 'active').not('group_label', 'is', null),
-      supabase.from('activity_rounds').select('*').order('created_at', { ascending: false }).limit(30),
+      supabase.from('sessions').select('round_id').eq('course_name', courseName).not('round_id', 'is', null),
     ]);
     setGroupChoices(Array.from(new Set((groups ?? []).map((g) => g.group_label as string))).sort());
+    const roundIds = Array.from(new Set((roundSessions ?? []).map((s) => s.round_id as string)));
+    if (roundIds.length === 0) { setRoundChoices([]); return; }
+    const { data: rounds } = await supabase.from('activity_rounds').select('*').in('id', roundIds).order('created_at', { ascending: false }).limit(30);
     setRoundChoices(rounds ?? []);
-  }, []);
+  }, [courseName]);
 
   useEffect(() => {
     supabase.from('course_settings').select('*').single().then(({ data }) => setSettings(data));
@@ -138,7 +141,7 @@ export function LiveSessionPage({ staff }: Props) {
   if (sessions.length === 0) {
     return (
       <main className="page">
-        <StartSessionPanel staff={staff} onStarted={loadSessions} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={settings?.course_name ?? 'IC181'} groupChoices={groupChoices} roundChoices={roundChoices} onPickerDataChanged={loadPickerData} />
+        <StartSessionPanel staff={staff} onStarted={loadSessions} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={courseName} groupChoices={groupChoices} roundChoices={roundChoices} onPickerDataChanged={loadPickerData} />
       </main>
     );
   }
@@ -257,7 +260,7 @@ export function LiveSessionPage({ staff }: Props) {
         ))}
 
       <Modal open={showStart} onClose={() => setShowStart(false)} title="Start Another Session" size="sm">
-        <StartSessionPanel staff={staff} embedded onStarted={() => { setShowStart(false); loadSessions(); }} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={settings?.course_name ?? 'IC181'} groupChoices={groupChoices} roundChoices={roundChoices} onPickerDataChanged={loadPickerData} />
+        <StartSessionPanel staff={staff} embedded onStarted={() => { setShowStart(false); loadSessions(); }} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={courseName} groupChoices={groupChoices} roundChoices={roundChoices} onPickerDataChanged={loadPickerData} />
       </Modal>
 
       {selected && (

@@ -9,11 +9,11 @@ import { ManualAttendanceModal } from '../../components/shared/ManualAttendanceM
 import { pctColor, formatDate, formatDateTime } from '../../lib/utils';
 import type { Staff, Session, Student, StudentAttendanceSummary, AttendanceRecord } from '../../types';
 
-interface Props { staff: Staff; }
+interface Props { staff: Staff; courseName: string; }
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
-export function ReportsPage({ staff }: Props) {
+export function ReportsPage({ staff, courseName }: Props) {
   const [tab, setTab] = useState<'students' | 'sessions' | 'day'>('students');
   const [sessions, setSessions] = useState<(Session & { presentCount: number })[]>([]);
   const [summaries, setSummaries] = useState<StudentAttendanceSummary[]>([]);
@@ -33,8 +33,8 @@ export function ReportsPage({ staff }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data: summaryRows }, { data: sessionRows }, { data: studentRows }] = await Promise.all([
-      supabase.from('student_attendance_summary').select('*').order('roll_number'),
-      supabase.from('sessions').select('*').order('session_date', { ascending: false }).order('created_at', { ascending: false }).limit(500),
+      supabase.rpc('student_attendance_summary', { p_course_name: courseName }),
+      supabase.from('sessions').select('*').eq('course_name', courseName).order('session_date', { ascending: false }).order('created_at', { ascending: false }).limit(500),
       supabase.from('students').select('*').eq('status', 'active').order('roll_number'),
     ]);
 
@@ -47,10 +47,10 @@ export function ReportsPage({ staff }: Props) {
       setSessions([]);
     }
 
-    setSummaries(summaryRows ?? []);
+    setSummaries((summaryRows as StudentAttendanceSummary[]) ?? []);
     setStudents(studentRows ?? []);
     setLoading(false);
-  }, []);
+  }, [courseName]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -78,6 +78,7 @@ export function ReportsPage({ staff }: Props) {
     setExporting(true);
     try {
       const res = await callFunction<{ url: string }>('excel-sync', {
+        courseName,
         fromDate: exportFrom || undefined,
         toDate: exportTo || undefined,
       });
@@ -107,7 +108,7 @@ export function ReportsPage({ staff }: Props) {
     <main className="page">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Reports</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Reports — {courseName}</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Attendance history and exports. Click any session or student to review or correct it.</p>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
@@ -202,7 +203,7 @@ export function ReportsPage({ staff }: Props) {
             <label className="text-xs text-slate-500">Date</label>
             <input type="date" value={dayDate} onChange={(e) => setDayDate(e.target.value)} className="input-base w-auto" />
           </div>
-          <DayAttendanceView date={dayDate} students={students} />
+          <DayAttendanceView date={dayDate} students={students} courseName={courseName} />
         </>
       )}
 
@@ -210,7 +211,7 @@ export function ReportsPage({ staff }: Props) {
         <SessionDetailModal staff={staff} session={openSession} onClose={() => setOpenSession(null)} onChanged={load} />
       )}
       {openStudent && (
-        <StudentDetailModal staff={staff} summary={openStudent} onClose={() => setOpenStudent(null)} onChanged={load} />
+        <StudentDetailModal staff={staff} summary={openStudent} courseName={courseName} onClose={() => setOpenStudent(null)} onChanged={load} />
       )}
     </main>
   );
@@ -259,8 +260,8 @@ function SessionDetailModal({
 interface MergedDay { session: Session; record: AttendanceRecord | null; }
 
 function StudentDetailModal({
-  staff, summary, onClose, onChanged,
-}: { staff: Staff; summary: StudentAttendanceSummary; onClose: () => void; onChanged: () => void }) {
+  staff, summary, courseName, onClose, onChanged,
+}: { staff: Staff; summary: StudentAttendanceSummary; courseName: string; onClose: () => void; onChanged: () => void }) {
   const [rows, setRows] = useState<MergedDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -270,14 +271,14 @@ function StudentDetailModal({
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data: allSessions }, { data: myRecords }] = await Promise.all([
-      supabase.from('sessions').select('*').eq('status', 'ended').order('session_date', { ascending: false }),
+      supabase.from('sessions').select('*').eq('status', 'ended').eq('course_name', courseName).order('session_date', { ascending: false }),
       supabase.from('attendance_records').select('*').eq('student_id', summary.student_id),
     ]);
     const recordBySession = new Map((myRecords ?? []).map((r) => [r.session_id, r]));
     const applicable = (allSessions ?? []).filter((s) => !s.group_filter || s.group_filter === summary.group_label);
     setRows(applicable.map((s) => ({ session: s, record: recordBySession.get(s.id) ?? null })));
     setLoading(false);
-  }, [summary.student_id, summary.group_label]);
+  }, [summary.student_id, summary.group_label, courseName]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -384,7 +385,7 @@ function StudentDetailModal({
   );
 }
 
-function DayAttendanceView({ date, students }: { date: string; students: Student[] }) {
+function DayAttendanceView({ date, students, courseName }: { date: string; students: Student[]; courseName: string }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -394,7 +395,7 @@ function DayAttendanceView({ date, students }: { date: string; students: Student
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const { data: sess } = await supabase.from('sessions').select('*').eq('session_date', date).order('created_at');
+      const { data: sess } = await supabase.from('sessions').select('*').eq('session_date', date).eq('course_name', courseName).order('created_at');
       if (cancelled) return;
       setSessions(sess ?? []);
       if (sess?.length) {
@@ -406,7 +407,7 @@ function DayAttendanceView({ date, students }: { date: string; students: Student
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [date]);
+  }, [date, courseName]);
 
   const filteredStudents = useMemo(() => {
     if (!search.trim()) return students;

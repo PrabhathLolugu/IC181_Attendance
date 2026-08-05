@@ -26,11 +26,11 @@ async function makeStudent(roll, group) {
   const { rows } = await c.query(`insert into students (roll_number, name, group_label) values ($1, $1, $2) returning id;`, [roll, group]);
   return rows[0].id;
 }
-async function makeSession(groupFilter, status, roundId) {
+async function makeSession(groupFilter, status, roundId, courseName = 'IC181') {
   const { rows } = await c.query(
     `insert into sessions (session_type, course_name, status, started_by, anchor_lat, anchor_lng, radius_meters, rotation_id, rotation_expires_at, group_filter, round_id)
-     values ('Yoga','IC181',$1,$2,31.77,76.98,100,'x',now(),$3,$4) returning id;`,
-    [status, await makeStaff(), groupFilter, roundId],
+     values ('Yoga',$5,$1,$2,31.77,76.98,100,'x',now(),$3,$4) returning id;`,
+    [status, await makeStaff(), groupFilter, roundId, courseName],
   );
   return rows[0].id;
 }
@@ -44,8 +44,8 @@ async function mark(sessionId, studentId, roll, status) {
     [sessionId, studentId, roll, status],
   );
 }
-async function summary(studentId) {
-  const { rows } = await c.query(`select * from student_attendance_summary where student_id = $1;`, [studentId]);
+async function summary(studentId, courseName = 'IC181') {
+  const { rows } = await c.query(`select * from student_attendance_summary($2) where student_id = $1;`, [studentId, courseName]);
   const r = rows[0];
   return {
     total_sessions: Number(r.total_sessions),
@@ -140,9 +140,29 @@ const sumCrossRound = await summary(studentCrossRound);
 assert(sumCrossRound.total_sessions === baseline + openRoundOffset + 1 && sumCrossRound.present_count === 1,
   `student outside the round's target groups who still attends gets round credit (got total=${sumCrossRound.total_sessions}, present=${sumCrossRound.present_count}, expected total=${baseline + openRoundOffset + 1})`);
 
+// Scenario 10 (course isolation): a session in a different course must not affect
+// -- or be affected by -- the primary course's percentage at all. (By this point
+// round4's general session from scenario 7 is a real closed IC181 round that
+// applies to everyone querying IC181 -- accounted for via openRoundOffset.)
+const demoSession = await makeSession(null, 'ended', null, 'ZTEST-DemoCourse');
+const studentDemo = await makeStudent('ZTESTSTU-DEMO01', null);
+await mark(demoSession, studentDemo, 'ZTESTSTU-DEMO01', 'present');
+const sumDemoAsIC181 = await summary(studentDemo, 'IC181');
+const sumDemoAsDemo = await summary(studentDemo, 'ZTEST-DemoCourse');
+assert(sumDemoAsIC181.total_sessions === openRoundOffset && sumDemoAsIC181.present_count === 0,
+  `a demo-course session does not appear at all when viewing IC181's stats (got total=${sumDemoAsIC181.total_sessions}, expected ${openRoundOffset} from the unrelated open IC181 round only)`);
+assert(sumDemoAsDemo.total_sessions === 1 && sumDemoAsDemo.present_count === 1 && sumDemoAsDemo.attendance_percentage === 100,
+  `the same session correctly shows 100% when viewing the demo course's own stats (got total=${sumDemoAsDemo.total_sessions}, present=${sumDemoAsDemo.present_count})`);
+
+// Scenario 11: the ambient baseline student (real IC181 context) must be completely
+// unaffected by the demo course's session existing at all.
+const sumBaselineAfterDemo = await summary(studentBaseline, 'IC181');
+assert(sumBaselineAfterDemo.total_sessions === baseline + openRoundOffset,
+  `an IC181 student's stats are unaffected by an unrelated demo-course session existing (got total=${sumBaselineAfterDemo.total_sessions}, expected ${baseline + openRoundOffset}, unchanged from before scenario 10)`);
+
 // Cleanup
 await c.query(`delete from attendance_records where roll_number like 'ZTESTSTU-%';`);
-await c.query(`delete from sessions where round_id in (select id from activity_rounds where name like 'ZTest %') or group_filter like 'ZTEST-%';`);
+await c.query(`delete from sessions where round_id in (select id from activity_rounds where name like 'ZTest %') or group_filter like 'ZTEST-%' or course_name = 'ZTEST-DemoCourse';`);
 await c.query(`delete from activity_rounds where name like 'ZTest %';`);
 await c.query(`delete from students where roll_number like 'ZTESTSTU-%';`);
 console.log('Cleaned up.');

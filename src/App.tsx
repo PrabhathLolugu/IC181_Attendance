@@ -27,8 +27,23 @@ export default function App() {
   const [studentMode, setStudentMode] = useState(false);
   const [attendToken, setAttendToken] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [courseName, setCourseName] = useState('SmartAttend');
+  const [defaultCourseName, setDefaultCourseName] = useState('IC181');
+  const [currentCourse, setCurrentCourseState] = useState(() => localStorage.getItem('sa_current_course') || 'IC181');
+  const [knownCourses, setKnownCourses] = useState<string[]>([]);
   const [liveSessionCount, setLiveSessionCount] = useState(0);
+
+  function setCurrentCourse(course: string) {
+    setCurrentCourseState(course);
+    localStorage.setItem('sa_current_course', course);
+  }
+
+  const loadKnownCourses = React.useCallback(async () => {
+    const { data } = await supabase.from('sessions').select('course_name');
+    const names = new Set((data ?? []).map((s) => s.course_name));
+    names.add(defaultCourseName);
+    setKnownCourses(Array.from(names).sort());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultCourseName]);
 
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get('attend');
@@ -42,22 +57,23 @@ export default function App() {
     if (!staff) return;
 
     supabase.from('course_settings').select('course_name').single().then(({ data }) => {
-      if (data?.course_name) setCourseName(data.course_name);
+      if (data?.course_name) setDefaultCourseName(data.course_name);
     });
 
     async function refreshLiveCount() {
-      const { count } = await supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('status', 'active');
+      const { count } = await supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('status', 'active').eq('course_name', currentCourse);
       setLiveSessionCount(count ?? 0);
     }
     refreshLiveCount();
+    loadKnownCourses();
 
     const channel = supabase
       .channel('app_sessions_watch')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, refreshLiveCount)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => { refreshLiveCount(); loadKnownCourses(); })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [staff]);
+  }, [staff, currentCourse, loadKnownCourses]);
 
   async function handleLogout() {
     await signOut();
@@ -123,21 +139,27 @@ export default function App() {
 
   const renderPage = () => {
     switch (effectiveTab) {
-      case 'dashboard': return <DashboardPage staff={staff} onNavigate={setActiveTab} />;
-      case 'live_session': return <LiveSessionPage staff={staff} />;
-      case 'students': return <StudentsPage staff={staff} />;
-      case 'reports': return <ReportsPage staff={staff} />;
-      case 'grades': return <GradesPage staff={staff} />;
+      case 'dashboard': return <DashboardPage staff={staff} onNavigate={setActiveTab} courseName={currentCourse} />;
+      case 'live_session': return <LiveSessionPage staff={staff} courseName={currentCourse} />;
+      case 'students': return <StudentsPage staff={staff} courseName={currentCourse} />;
+      case 'reports': return <ReportsPage staff={staff} courseName={currentCourse} />;
+      case 'grades': return <GradesPage staff={staff} courseName={currentCourse} />;
       case 'admin': return <AdminPage staff={staff} />;
       case 'audit': return <AuditPage />;
       case 'settings': return <SettingsPage />;
-      default: return <DashboardPage staff={staff} onNavigate={setActiveTab} />;
+      default: return <DashboardPage staff={staff} onNavigate={setActiveTab} courseName={currentCourse} />;
     }
   };
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-[#0d1117] overflow-hidden">
-      <TopBar staff={staff} courseName={courseName} onLogout={handleLogout} />
+      <TopBar
+        staff={staff}
+        courseName={currentCourse}
+        knownCourses={knownCourses}
+        onCourseChange={setCurrentCourse}
+        onLogout={handleLogout}
+      />
 
       <div className="flex flex-1 min-h-0">
         <Sidebar active={effectiveTab} onNavigate={setActiveTab} staff={staff} liveSessionCount={liveSessionCount} />

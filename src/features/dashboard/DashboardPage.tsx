@@ -7,9 +7,10 @@ import type { Staff, Session, AttendanceRecord } from '../../types';
 interface Props {
   staff: Staff;
   onNavigate: (tab: string) => void;
+  courseName: string;
 }
 
-export function DashboardPage({ staff, onNavigate }: Props) {
+export function DashboardPage({ staff, onNavigate, courseName }: Props) {
   const [todaySessions, setTodaySessions] = useState<Session[]>([]);
   const [todayRecords, setTodayRecords] = useState<AttendanceRecord[]>([]);
   const [pendingOverrides, setPendingOverrides] = useState(0);
@@ -23,6 +24,7 @@ export function DashboardPage({ staff, onNavigate }: Props) {
       .from('sessions')
       .select('*')
       .eq('session_date', today)
+      .eq('course_name', courseName)
       .order('created_at', { ascending: false });
     setTodaySessions(sessions ?? []);
 
@@ -51,7 +53,7 @@ export function DashboardPage({ staff, onNavigate }: Props) {
 
     const { count: studentCount } = await supabase.from('students').select('*', { count: 'exact', head: true }).eq('status', 'active');
     setTotalStudents(studentCount ?? 0);
-  }, []);
+  }, [courseName]);
 
   useEffect(() => {
     load();
@@ -77,7 +79,7 @@ export function DashboardPage({ staff, onNavigate }: Props) {
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">{getGreeting()}, {staff.name.split(' ')[0]}.</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {courseName} · {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
         </div>
         <div className="flex gap-2">
