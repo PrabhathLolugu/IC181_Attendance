@@ -54,6 +54,16 @@ export function ReportsPage({ staff }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel('reports_watch')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load]);
+
   const filteredSummaries = useMemo(() => {
     if (!studentSearch.trim()) return summaries;
     const q = studentSearch.toLowerCase();

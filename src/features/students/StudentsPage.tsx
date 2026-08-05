@@ -11,7 +11,6 @@ const PAGE_SIZE = 20;
 const emptyForm = { roll_number: '', name: '', email: '', phone: '', department: '', program: '', semester: '', group_label: '', batch: '' };
 
 export function StudentsPage({ staff }: Props) {
-  const isAdmin = staff.role === 'admin';
   const [students, setStudents] = useState<Student[]>([]);
   const [summaries, setSummaries] = useState<Record<string, StudentAttendanceSummary>>({});
   const [search, setSearch] = useState('');
@@ -25,6 +24,13 @@ export function StudentsPage({ staff }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkGroup, setBulkGroup] = useState('');
 
+  const loadSummaries = useCallback(async () => {
+    const { data: summaryRows } = await supabase.from('student_attendance_summary').select('*');
+    const map: Record<string, StudentAttendanceSummary> = {};
+    (summaryRows ?? []).forEach((s) => { map[s.roll_number] = s; });
+    setSummaries(map);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     let query = supabase.from('students').select('*', { count: 'exact' }).order('roll_number');
@@ -34,15 +40,22 @@ export function StudentsPage({ staff }: Props) {
     setStudents(data ?? []);
     setTotal(count ?? 0);
     setSelected(new Set());
-
-    const { data: summaryRows } = await supabase.from('student_attendance_summary').select('*');
-    const map: Record<string, StudentAttendanceSummary> = {};
-    (summaryRows ?? []).forEach((s) => { map[s.roll_number] = s; });
-    setSummaries(map);
+    await loadSummaries();
     setLoading(false);
-  }, [search, statusFilter, page]);
+  }, [search, statusFilter, page, loadSummaries]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Attendance changes elsewhere shouldn't reset the roster or an in-progress
+  // bulk-group selection -- just refresh the percentage numbers live.
+  useEffect(() => {
+    const channel = supabase
+      .channel('students_summary_watch')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, loadSummaries)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, loadSummaries)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [loadSummaries]);
 
   async function handleSoftDelete(student: Student) {
     if (!window.confirm(`Remove ${student.name} (${student.roll_number})? This can be restored later.`)) return;
@@ -90,12 +103,10 @@ export function StudentsPage({ staff }: Props) {
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Students</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{total} {statusFilter === 'all' ? '' : statusFilter} students</p>
         </div>
-        {isAdmin && (
-          <div className="flex gap-2">
-            <button onClick={() => setShowImport(true)} className="btn-secondary btn-sm">Import CSV</button>
-            <button onClick={() => setShowAdd(true)} className="btn-primary btn-sm">Add Student</button>
-          </div>
-        )}
+        <div className="flex gap-2">
+          <button onClick={() => setShowImport(true)} className="btn-secondary btn-sm">Import CSV</button>
+          <button onClick={() => setShowAdd(true)} className="btn-primary btn-sm">Add Student</button>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -114,7 +125,7 @@ export function StudentsPage({ staff }: Props) {
         </select>
       </div>
 
-      {isAdmin && selected.size > 0 && (
+      {selected.size > 0 && (
         <div className="card p-3 flex items-center gap-3 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20">
           <span className="text-sm font-medium text-blue-900 dark:text-blue-300">{selected.size} selected</span>
           <input
@@ -133,9 +144,9 @@ export function StudentsPage({ staff }: Props) {
         <table className="data-table min-w-[760px]">
           <thead>
             <tr>
-              {isAdmin && <th><input type="checkbox" checked={selected.size > 0 && selected.size === students.length} onChange={toggleSelectAll} /></th>}
+              <th><input type="checkbox" checked={selected.size > 0 && selected.size === students.length} onChange={toggleSelectAll} /></th>
               <th>Roll</th><th>Name</th><th>Dept / Program</th><th>Group</th><th>Attendance %</th><th>Status</th>
-              {isAdmin && <th></th>}
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -148,7 +159,7 @@ export function StudentsPage({ staff }: Props) {
                 const summary = summaries[s.roll_number];
                 return (
                   <tr key={s.id}>
-                    {isAdmin && <td><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} /></td>}
+                    <td><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} /></td>
                     <td className="font-mono font-medium">{s.roll_number}</td>
                     <td>{s.name}</td>
                     <td className="text-slate-500 dark:text-slate-400 text-xs">{[s.department, s.program].filter(Boolean).join(' · ') || '—'}</td>
@@ -159,18 +170,16 @@ export function StudentsPage({ staff }: Props) {
                       ) : '—'}
                     </td>
                     <td><span className="badge-slate">{s.status}</span></td>
-                    {isAdmin && (
-                      <td>
-                        <div className="flex gap-2 justify-end">
-                          <button onClick={() => setEditing(s)} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Edit</button>
-                          {s.status === 'deleted' ? (
-                            <button onClick={() => handleRestore(s)} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Restore</button>
-                          ) : (
-                            <button onClick={() => handleSoftDelete(s)} className="text-xs text-red-600 hover:text-red-700 font-medium">Remove</button>
-                          )}
-                        </div>
-                      </td>
-                    )}
+                    <td>
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => setEditing(s)} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Edit</button>
+                        {s.status === 'deleted' ? (
+                          <button onClick={() => handleRestore(s)} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Restore</button>
+                        ) : (
+                          <button onClick={() => handleSoftDelete(s)} className="text-xs text-red-600 hover:text-red-700 font-medium">Remove</button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 );
               })
