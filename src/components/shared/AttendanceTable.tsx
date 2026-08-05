@@ -5,7 +5,7 @@ import { toast } from '../ui/Toast';
 import { timeAgo, statusLabel } from '../../lib/utils';
 import type { Staff, AttendanceRecord } from '../../types';
 
-const EDITABLE_STATUSES: AttendanceRecord['status'][] = ['present', 'late', 'manual', 'override', 'excused'];
+const EDITABLE_STATUSES: AttendanceRecord['status'][] = ['present', 'manual', 'override', 'excused'];
 
 export function AttendanceTable({
   staff, records, onChanged, title = 'Attendance Log', emptyText = 'No one has marked attendance yet.',

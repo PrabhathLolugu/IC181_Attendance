@@ -11,7 +11,7 @@ export function ManualAttendanceModal({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Student[]>([]);
   const [selected, setSelected] = useState<Student | null>(null);
-  const [status, setStatus] = useState<'present' | 'late' | 'excused'>('present');
+  const [status, setStatus] = useState<'present' | 'excused'>('present');
   const [reason, setReason] = useState('Phone unavailable');
   const [customReason, setCustomReason] = useState('');
   const [loading, setLoading] = useState(false);
@@ -81,9 +81,8 @@ export function ManualAttendanceModal({
             </div>
             <div>
               <label className="label">Mark As</label>
-              <select value={status} onChange={(e) => setStatus(e.target.value as 'present' | 'late' | 'excused')} className="input-base">
+              <select value={status} onChange={(e) => setStatus(e.target.value as 'present' | 'excused')} className="input-base">
                 <option value="present">Present</option>
-                <option value="late">Late</option>
                 <option value="excused">Excused (medical / approved leave)</option>
               </select>
             </div>

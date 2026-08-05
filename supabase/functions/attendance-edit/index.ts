@@ -3,7 +3,7 @@ import { serviceClient } from "../_shared/client.ts";
 import { requireStaff } from "../_shared/staffAuth.ts";
 import { logAudit } from "../_shared/audit.ts";
 
-const VALID_STATUSES = ["present", "late", "manual", "override", "excused"];
+const VALID_STATUSES = ["present", "manual", "override", "excused"];
 
 Deno.serve(async (req: Request) => {
   const preflight = handleOptions(req);

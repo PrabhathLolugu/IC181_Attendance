@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
     ];
     sheet.getRow(1).font = { bold: true };
 
-    const LABELS: Record<string, string> = { late: "Late", manual: "Manual", override: "Override", excused: "Excused", present: "P" };
+    const LABELS: Record<string, string> = { manual: "Manual", override: "Override", excused: "Excused", present: "P" };
 
     for (const student of students ?? []) {
       const row: Record<string, string | number> = {

@@ -423,9 +423,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
               </svg>
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {result?.record?.status === 'late' ? "You're marked Late" : 'Attendance Recorded'}
-              </p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">Attendance Recorded</p>
               <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">{roll} · {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</p>
             </div>
             <button onClick={reset} className="btn-secondary w-full">Done</button>

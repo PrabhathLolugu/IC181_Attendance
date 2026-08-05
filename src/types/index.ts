@@ -33,7 +33,6 @@ export interface Student {
 export interface CourseSettings {
   course_name: string;
   gps_radius_meters: number;
-  late_window_minutes: number;
   override_code_ttl_seconds: number;
   qr_rotation_seconds: number;
   qr_token_validity_seconds: number;
@@ -64,7 +63,7 @@ export interface Session {
   ended_at?: string | null;
 }
 
-export type AttendanceStatus = 'present' | 'late' | 'manual' | 'override' | 'excused';
+export type AttendanceStatus = 'present' | 'manual' | 'override' | 'excused';
 export type AttendanceMethod = 'gps' | 'override_code' | 'manual' | 'instructor_approved';
 
 export interface AttendanceRecord {
@@ -117,7 +116,6 @@ export interface StudentAttendanceSummary {
   name: string;
   group_label?: string | null;
   present_count: number;
-  late_count: number;
   excused_count: number;
   manual_count: number;
   override_count: number;

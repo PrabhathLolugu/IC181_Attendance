@@ -134,7 +134,6 @@ export function LiveSessionPage({ staff, courseName }: Props) {
 
   const qrUrl = qrToken ? `${window.location.origin}${window.location.pathname}?attend=${encodeURIComponent(qrToken)}` : '';
   const presentCount = records.length;
-  const lateCount = records.filter((r) => r.status === 'late').length;
   const manualCount = records.filter((r) => r.method === 'manual').length;
   const overrideCount = records.filter((r) => r.method === 'override_code' || r.method === 'instructor_approved').length;
 
@@ -223,9 +222,8 @@ export function LiveSessionPage({ staff, courseName }: Props) {
             </div>
 
             <div className="lg:col-span-2 flex flex-col gap-6">
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <StatMini label="Present" value={presentCount} color="text-emerald-600" />
-                <StatMini label="Late" value={lateCount} color="text-amber-600" />
                 <StatMini label="Manual" value={manualCount} color="text-purple-600" />
                 <StatMini label="Override" value={overrideCount} color="text-blue-600" />
               </div>

@@ -23,7 +23,6 @@ export function SettingsPage() {
       .update({
         course_name: form.course_name,
         gps_radius_meters: form.gps_radius_meters,
-        late_window_minutes: form.late_window_minutes,
         override_code_ttl_seconds: form.override_code_ttl_seconds,
         qr_rotation_seconds: form.qr_rotation_seconds,
         qr_token_validity_seconds: form.qr_token_validity_seconds,
@@ -54,10 +53,6 @@ export function SettingsPage() {
           <div>
             <label className="label">GPS Radius (metres)</label>
             <input type="number" min={10} className="input-base" value={form.gps_radius_meters} onChange={(e) => setForm({ ...form, gps_radius_meters: Number(e.target.value) })} />
-          </div>
-          <div>
-            <label className="label">Late Window (minutes)</label>
-            <input type="number" min={0} className="input-base" value={form.late_window_minutes} onChange={(e) => setForm({ ...form, late_window_minutes: Number(e.target.value) })} />
           </div>
           <div>
             <label className="label">Override Code Validity (seconds)</label>

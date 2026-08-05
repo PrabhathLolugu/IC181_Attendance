@@ -51,7 +51,6 @@ export function initials(name: string): string {
 export function statusBadgeClass(status: string): string {
   switch (status) {
     case 'present':   return 'badge-green';
-    case 'late':      return 'badge-amber';
     case 'manual':    return 'badge-purple';
     case 'override':  return 'badge-blue';
     case 'excused':   return 'badge-purple';
@@ -71,7 +70,6 @@ export function statusBadgeClass(status: string): string {
 export function statusLabel(status: string): string {
   const map: Record<string, string> = {
     present: 'Present',
-    late: 'Late',
     manual: 'Manual',
     override: 'GPS Override',
     excused: 'Excused',

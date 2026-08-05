@@ -13,7 +13,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const roll = String(body.rollNumber ?? "").trim().toUpperCase();
     const reason = String(body.reason ?? "").trim();
-    const status = ["present", "late", "excused"].includes(body.status) ? body.status : "present";
+    const status = ["present", "excused"].includes(body.status) ? body.status : "present";
     if (!body.sessionId || !roll || !reason) {
       return withCors({ error: "Session, roll number, and a reason are all required." }, 400);
     }

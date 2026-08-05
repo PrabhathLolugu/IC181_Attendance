@@ -10,11 +10,11 @@ import { pctColor, formatDate, formatDateTime } from '../../lib/utils';
 import { SESSION_TYPE_PRESETS } from '../../types';
 import type { Staff, Session, Student, StudentAttendanceSummary, AttendanceRecord } from '../../types';
 
-interface Props { staff: Staff; courseName: string; }
+interface Props { staff: Staff; courseName: string; focusSessionId?: string | null; onFocusHandled?: () => void; }
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
-export function ReportsPage({ staff, courseName }: Props) {
+export function ReportsPage({ staff, courseName, focusSessionId, onFocusHandled }: Props) {
   const [tab, setTab] = useState<'students' | 'sessions' | 'day'>('students');
   const [sessions, setSessions] = useState<(Session & { presentCount: number })[]>([]);
   const [summaries, setSummaries] = useState<StudentAttendanceSummary[]>([]);
@@ -56,6 +56,23 @@ export function ReportsPage({ staff, courseName }: Props) {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
+    if (!focusSessionId) return;
+    const match = sessions.find((s) => s.id === focusSessionId);
+    if (match) {
+      setTab('sessions');
+      setOpenSession(match);
+      onFocusHandled?.();
+      return;
+    }
+    if (!loading) {
+      supabase.from('sessions').select('*').eq('id', focusSessionId).maybeSingle().then(({ data }) => {
+        if (data) { setTab('sessions'); setOpenSession(data); }
+        onFocusHandled?.();
+      });
+    }
+  }, [focusSessionId, sessions, loading, onFocusHandled]);
+
+  useEffect(() => {
     const channel = supabase
       .channel('reports_watch')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, load)
@@ -93,8 +110,8 @@ export function ReportsPage({ staff, courseName }: Props) {
   }
 
   function handleCsvExport() {
-    const header = ['Roll Number', 'Name', 'Group', 'Present', 'Late', 'Excused', 'Manual', 'Override', 'Total Sessions', 'Attendance %'];
-    const rows = filteredSummaries.map((s) => [s.roll_number, s.name, s.group_label ?? '', s.present_count, s.late_count, s.excused_count, s.manual_count, s.override_count, s.total_sessions, s.attendance_percentage]);
+    const header = ['Roll Number', 'Name', 'Group', 'Present', 'Excused', 'Manual', 'Override', 'Total Sessions', 'Attendance %'];
+    const rows = filteredSummaries.map((s) => [s.roll_number, s.name, s.group_label ?? '', s.present_count, s.excused_count, s.manual_count, s.override_count, s.total_sessions, s.attendance_percentage]);
     const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -145,17 +162,16 @@ export function ReportsPage({ staff, courseName }: Props) {
           <div className="card overflow-x-auto">
             <table className="data-table min-w-[820px]">
               <thead>
-                <tr><th>Roll</th><th>Name</th><th>Present</th><th>Late</th><th>Excused</th><th>Manual</th><th>Override</th><th>Total Sessions</th><th>Attendance %</th></tr>
+                <tr><th>Roll</th><th>Name</th><th>Present</th><th>Excused</th><th>Manual</th><th>Override</th><th>Total Sessions</th><th>Attendance %</th></tr>
               </thead>
               <tbody>
                 {filteredSummaries.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-10 text-slate-400 text-sm">No matching students.</td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-slate-400 text-sm">No matching students.</td></tr>
                 ) : filteredSummaries.map((s) => (
                   <tr key={s.student_id} onClick={() => setOpenStudent(s)} className="cursor-pointer">
                     <td className="font-mono font-medium">{s.roll_number}</td>
                     <td>{s.name}</td>
                     <td>{s.present_count}</td>
-                    <td>{s.late_count}</td>
                     <td className="text-purple-500">{s.excused_count}</td>
                     <td>{s.manual_count}</td>
                     <td>{s.override_count}</td>
@@ -481,7 +497,7 @@ function StudentDetailModal({
     }
   }
 
-  const EDITABLE: AttendanceRecord['status'][] = ['present', 'late', 'manual', 'override', 'excused'];
+  const EDITABLE: AttendanceRecord['status'][] = ['present', 'manual', 'override', 'excused'];
 
   return (
     <Modal

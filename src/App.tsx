@@ -31,6 +31,12 @@ export default function App() {
   const [currentCourse, setCurrentCourseState] = useState(() => localStorage.getItem('sa_current_course') || 'IC181');
   const [knownCourses, setKnownCourses] = useState<string[]>([]);
   const [liveSessionCount, setLiveSessionCount] = useState(0);
+  const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
+
+  function openSession(sessionId: string) {
+    setFocusSessionId(sessionId);
+    setActiveTab('reports');
+  }
 
   function setCurrentCourse(course: string) {
     setCurrentCourseState(course);
@@ -139,15 +145,15 @@ export default function App() {
 
   const renderPage = () => {
     switch (effectiveTab) {
-      case 'dashboard': return <DashboardPage staff={staff} onNavigate={setActiveTab} courseName={currentCourse} />;
+      case 'dashboard': return <DashboardPage staff={staff} onNavigate={setActiveTab} onOpenSession={openSession} courseName={currentCourse} />;
       case 'live_session': return <LiveSessionPage staff={staff} courseName={currentCourse} />;
       case 'students': return <StudentsPage staff={staff} courseName={currentCourse} />;
-      case 'reports': return <ReportsPage staff={staff} courseName={currentCourse} />;
+      case 'reports': return <ReportsPage staff={staff} courseName={currentCourse} focusSessionId={focusSessionId} onFocusHandled={() => setFocusSessionId(null)} />;
       case 'grades': return <GradesPage staff={staff} courseName={currentCourse} />;
       case 'admin': return <AdminPage staff={staff} />;
       case 'audit': return <AuditPage />;
       case 'settings': return <SettingsPage />;
-      default: return <DashboardPage staff={staff} onNavigate={setActiveTab} courseName={currentCourse} />;
+      default: return <DashboardPage staff={staff} onNavigate={setActiveTab} onOpenSession={openSession} courseName={currentCourse} />;
     }
   };
 

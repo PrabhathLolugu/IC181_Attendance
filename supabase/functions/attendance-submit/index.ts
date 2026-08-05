@@ -42,9 +42,6 @@ Deno.serve(async (req: Request) => {
       return withCors({ duplicate: true, markedAt: existing.marked_at, status: existing.status });
     }
 
-    const { data: settings } = await db.from("course_settings").select("*").single();
-    const lateWindowMin = settings?.late_window_minutes ?? 10;
-
     const lat = Number(body.lat);
     const lng = Number(body.lng);
     const hasPosition = Number.isFinite(lat) && Number.isFinite(lng);
@@ -90,16 +87,13 @@ Deno.serve(async (req: Request) => {
       return await requestOverride("outside_radius", distance);
     }
 
-    const minutesSinceStart = (Date.now() - new Date(session.created_at).getTime()) / 60000;
-    const status = minutesSinceStart > lateWindowMin ? "late" : "present";
-
     const { data: record, error: insertErr } = await db
       .from("attendance_records")
       .insert({
         session_id: session.id,
         student_id: student.id,
         roll_number: student.roll_number,
-        status,
+        status: "present",
         method: "gps",
         distance_meters: distance,
         gps_lat: lat,

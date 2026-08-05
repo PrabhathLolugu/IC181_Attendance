@@ -149,8 +149,8 @@ const studentDemo = await makeStudent('ZTESTSTU-DEMO01', null);
 await mark(demoSession, studentDemo, 'ZTESTSTU-DEMO01', 'present');
 const sumDemoAsIC181 = await summary(studentDemo, 'IC181');
 const sumDemoAsDemo = await summary(studentDemo, 'ZTEST-DemoCourse');
-assert(sumDemoAsIC181.total_sessions === openRoundOffset && sumDemoAsIC181.present_count === 0,
-  `a demo-course session does not appear at all when viewing IC181's stats (got total=${sumDemoAsIC181.total_sessions}, expected ${openRoundOffset} from the unrelated open IC181 round only)`);
+assert(sumDemoAsIC181.total_sessions === baseline + openRoundOffset && sumDemoAsIC181.present_count === 0,
+  `a demo-course session does not appear at all when viewing IC181's stats (got total=${sumDemoAsIC181.total_sessions}, expected ${baseline + openRoundOffset} from ambient + the unrelated open IC181 round only)`);
 assert(sumDemoAsDemo.total_sessions === 1 && sumDemoAsDemo.present_count === 1 && sumDemoAsDemo.attendance_percentage === 100,
   `the same session correctly shows 100% when viewing the demo course's own stats (got total=${sumDemoAsDemo.total_sessions}, present=${sumDemoAsDemo.present_count})`);
 
