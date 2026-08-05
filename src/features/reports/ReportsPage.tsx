@@ -14,6 +14,38 @@ interface Props { staff: Staff; courseName: string; focusSessionId?: string | nu
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+interface SortState { key: string; dir: 'asc' | 'desc'; }
+
+function compareValues(av: unknown, bv: unknown): number {
+  const a = av ?? '';
+  const b = bv ?? '';
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function sortRows<T>(rows: T[], sort: SortState): T[] {
+  return [...rows].sort((a, b) => {
+    const av = (a as Record<string, unknown>)[sort.key];
+    const bv = (b as Record<string, unknown>)[sort.key];
+    const cmp = compareValues(av, bv);
+    return sort.dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+function Th({ label, sortKey, sort, onSort, className }: { label: string; sortKey: string; sort: SortState; onSort: (key: string) => void; className?: string }) {
+  const active = sort.key === sortKey;
+  return (
+    <th onClick={() => onSort(sortKey)} className={`cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-300 ${className ?? ''}`}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className={`text-[9px] ${active ? 'text-blue-600' : 'text-slate-300 dark:text-slate-600'}`}>
+          {active ? (sort.dir === 'asc' ? '▲' : '▼') : '▲'}
+        </span>
+      </span>
+    </th>
+  );
+}
+
 export function ReportsPage({ staff, courseName, focusSessionId, onFocusHandled }: Props) {
   const [tab, setTab] = useState<'students' | 'sessions' | 'day'>('students');
   const [sessions, setSessions] = useState<(Session & { presentCount: number })[]>([]);
@@ -30,6 +62,15 @@ export function ReportsPage({ staff, courseName, focusSessionId, onFocusHandled 
   const [dayDate, setDayDate] = useState(todayISO());
   const [exportFrom, setExportFrom] = useState('');
   const [exportTo, setExportTo] = useState('');
+  const [studentSort, setStudentSort] = useState<SortState>({ key: 'roll_number', dir: 'asc' });
+  const [sessionSort, setSessionSort] = useState<SortState>({ key: 'session_date', dir: 'desc' });
+
+  function toggleStudentSort(key: string) {
+    setStudentSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  }
+  function toggleSessionSort(key: string) {
+    setSessionSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,14 +124,15 @@ export function ReportsPage({ staff, courseName, focusSessionId, onFocusHandled 
   }, [load]);
 
   const filteredSummaries = useMemo(() => {
-    if (!studentSearch.trim()) return summaries;
-    const q = studentSearch.toLowerCase();
-    return summaries.filter((s) => s.roll_number.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
-  }, [summaries, studentSearch]);
+    const q = studentSearch.trim().toLowerCase();
+    const base = q ? summaries.filter((s) => s.roll_number.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)) : summaries;
+    return sortRows(base, studentSort);
+  }, [summaries, studentSearch, studentSort]);
 
   const filteredSessions = useMemo(() => {
-    return sessions.filter((s) => (!sessionFrom || s.session_date >= sessionFrom) && (!sessionTo || s.session_date <= sessionTo));
-  }, [sessions, sessionFrom, sessionTo]);
+    const base = sessions.filter((s) => (!sessionFrom || s.session_date >= sessionFrom) && (!sessionTo || s.session_date <= sessionTo));
+    return sortRows(base, sessionSort);
+  }, [sessions, sessionFrom, sessionTo, sessionSort]);
 
   async function handleExcelExport() {
     setExporting(true);
@@ -162,7 +204,16 @@ export function ReportsPage({ staff, courseName, focusSessionId, onFocusHandled 
           <div className="card overflow-x-auto">
             <table className="data-table min-w-[820px]">
               <thead>
-                <tr><th>Roll</th><th>Name</th><th>Present</th><th>Excused</th><th>Manual</th><th>Override</th><th>Total Sessions</th><th>Attendance %</th></tr>
+                <tr>
+                  <Th label="Roll" sortKey="roll_number" sort={studentSort} onSort={toggleStudentSort} />
+                  <Th label="Name" sortKey="name" sort={studentSort} onSort={toggleStudentSort} />
+                  <Th label="Present" sortKey="present_count" sort={studentSort} onSort={toggleStudentSort} />
+                  <Th label="Excused" sortKey="excused_count" sort={studentSort} onSort={toggleStudentSort} />
+                  <Th label="Manual" sortKey="manual_count" sort={studentSort} onSort={toggleStudentSort} />
+                  <Th label="Override" sortKey="override_count" sort={studentSort} onSort={toggleStudentSort} />
+                  <Th label="Total Sessions" sortKey="total_sessions" sort={studentSort} onSort={toggleStudentSort} />
+                  <Th label="Attendance %" sortKey="attendance_percentage" sort={studentSort} onSort={toggleStudentSort} />
+                </tr>
               </thead>
               <tbody>
                 {filteredSummaries.length === 0 ? (
@@ -196,7 +247,16 @@ export function ReportsPage({ staff, courseName, focusSessionId, onFocusHandled 
           </div>
           <div className="card overflow-x-auto">
             <table className="data-table min-w-[680px]">
-              <thead><tr><th>Date</th><th>Course</th><th>Type</th><th>Section</th><th>Status</th><th>Present</th></tr></thead>
+              <thead>
+                <tr>
+                  <Th label="Date" sortKey="session_date" sort={sessionSort} onSort={toggleSessionSort} />
+                  <Th label="Course" sortKey="course_name" sort={sessionSort} onSort={toggleSessionSort} />
+                  <Th label="Type" sortKey="session_type" sort={sessionSort} onSort={toggleSessionSort} />
+                  <Th label="Section" sortKey="group_filter" sort={sessionSort} onSort={toggleSessionSort} />
+                  <Th label="Status" sortKey="status" sort={sessionSort} onSort={toggleSessionSort} />
+                  <Th label="Present" sortKey="presentCount" sort={sessionSort} onSort={toggleSessionSort} />
+                </tr>
+              </thead>
               <tbody>
                 {filteredSessions.length === 0 ? (
                   <tr><td colSpan={6} className="text-center py-10 text-slate-400 text-sm">No sessions in range.</td></tr>
