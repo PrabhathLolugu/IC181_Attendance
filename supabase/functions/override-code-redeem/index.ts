@@ -16,6 +16,11 @@ Deno.serve(async (req: Request) => {
     const code = String(body.code ?? "").trim();
     if (!roll || !code) return withCors({ error: "Roll number and code are required." }, 400);
 
+    // device_fingerprint is optional — sent by the student web app.
+    const deviceFingerprint = body.deviceFingerprint
+      ? String(body.deviceFingerprint).trim().slice(0, 64) || null
+      : null;
+
     const db = serviceClient();
     const { data: session } = await db.from("sessions").select("*").eq("id", qrCheck.payload.sid).eq("status", "active").maybeSingle();
     if (!session) return withCors({ error: "Attendance session not found or has ended." }, 404);
@@ -30,6 +35,24 @@ Deno.serve(async (req: Request) => {
     const { data: student } = await db.from("students").select("*").eq("roll_number", roll).maybeSingle();
     if (!student) return withCors({ error: "No student found with that roll number." }, 404);
 
+    // ── Device fingerprint check ─────────────────────────────────────────────
+    // Block the redemption if a DIFFERENT student already marked from this device.
+    if (deviceFingerprint) {
+      const { data: deviceRecord } = await db
+        .from("attendance_records")
+        .select("roll_number, student_id")
+        .eq("session_id", session.id)
+        .eq("device_fingerprint", deviceFingerprint)
+        .maybeSingle();
+
+      if (deviceRecord && deviceRecord.student_id !== student.id) {
+        return withCors(
+          { deviceBlocked: true, blockedRoll: deviceRecord.roll_number },
+          409,
+        );
+      }
+    }
+
     const { data: record, error } = await db
       .from("attendance_records")
       .insert({
@@ -38,12 +61,19 @@ Deno.serve(async (req: Request) => {
         roll_number: student.roll_number,
         status: "override",
         method: "override_code",
+        device_fingerprint: deviceFingerprint,
       })
       .select()
       .single();
 
     if (error) {
-      if (error.code === "23505") return withCors({ duplicate: true });
+      if (error.code === "23505") {
+        // Check whether it's a device or student duplicate
+        if (error.message?.includes("device")) {
+          return withCors({ deviceBlocked: true }, 409);
+        }
+        return withCors({ duplicate: true });
+      }
       return withCors({ error: "Could not record attendance." }, 500);
     }
 

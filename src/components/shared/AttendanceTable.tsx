@@ -55,7 +55,7 @@ export function AttendanceTable({
           <div className="px-5 py-10 text-center text-sm text-slate-400">{emptyText}</div>
         ) : (
           <table className="data-table">
-            <thead><tr><th>Roll</th><th>Status</th><th>Method</th><th>Time</th><th></th></tr></thead>
+            <thead><tr><th>Roll</th><th>Status</th><th>Method</th><th>Device</th><th>Time</th><th></th></tr></thead>
             <tbody>
               {records.map((r) => (
                 <tr key={r.id}>
@@ -74,6 +74,16 @@ export function AttendanceTable({
                     )}
                   </td>
                   <td className="text-slate-400 text-xs">{r.method.replace('_', ' ')}</td>
+                  <td>
+                    {(r as AttendanceRecord & { device_fingerprint?: string }).device_fingerprint
+                      ? (
+                        <span className="font-mono text-[10px] bg-slate-100 dark:bg-[#21262d] text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded" title={(r as AttendanceRecord & { device_fingerprint?: string }).device_fingerprint}>
+                          {((r as AttendanceRecord & { device_fingerprint?: string }).device_fingerprint as string).slice(0, 8)}
+                        </span>
+                      )
+                      : <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
+                    }
+                  </td>
                   <td className="text-slate-400 text-sm">{timeAgo(r.marked_at)}</td>
                   <td>
                     <div className="flex gap-2 justify-end">

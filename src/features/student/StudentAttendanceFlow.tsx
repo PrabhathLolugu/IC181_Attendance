@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { getDeviceFingerprint } from '../../lib/deviceFingerprint';
 import { callFunction } from '../../lib/api';
 import { CameraScanner } from '../../components/shared/CameraScanner';
 import type { Student, Session, AttendanceRecord } from '../../types';
@@ -12,6 +13,7 @@ type Step =
   | 'submitting'
   | 'success'
   | 'duplicate'
+  | 'device_blocked'
   | 'override_pending'
   | 'override_code'
   | 'error';
@@ -61,6 +63,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
   const [error, setError] = useState('');
   const [result, setResult] = useState<{ record?: AttendanceRecord; session?: Session } | null>(null);
   const [duplicateInfo, setDuplicateInfo] = useState<{ markedAt?: string; status?: string } | null>(null);
+  const [deviceBlockedRoll, setDeviceBlockedRoll] = useState<string | null>(null);
 
   const rollRef = useRef<HTMLInputElement>(null);
 
@@ -182,6 +185,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
     setStep('submitting');
     setError('');
     try {
+      const deviceFingerprint = await getDeviceFingerprint();
       const res = await callFunction<{
         record?: AttendanceRecord;
         session?: Session;
@@ -190,6 +194,8 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
         status?: string;
         overridePending?: boolean;
         reason?: string;
+        deviceBlocked?: boolean;
+        blockedRoll?: string;
       }>('attendance-submit', {
         qrToken: token,
         rollNumber: roll,
@@ -197,9 +203,13 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
         lng: position?.lng,
         accuracy: position?.accuracy,
         gpsDenied,
+        deviceFingerprint,
       });
 
-      if (res.duplicate) {
+      if (res.deviceBlocked) {
+        setDeviceBlockedRoll(res.blockedRoll ?? null);
+        setStep('device_blocked');
+      } else if (res.duplicate) {
         setDuplicateInfo({ markedAt: res.markedAt, status: res.status });
         setStep('duplicate');
       } else if (res.overridePending) {
@@ -229,12 +239,22 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
     setRollLoading(true);
     setError('');
     try {
-      const res = await callFunction<{ record?: AttendanceRecord; duplicate?: boolean }>('override-code-redeem', {
+      const deviceFingerprint = await getDeviceFingerprint();
+      const res = await callFunction<{
+        record?: AttendanceRecord;
+        duplicate?: boolean;
+        deviceBlocked?: boolean;
+        blockedRoll?: string;
+      }>('override-code-redeem', {
         qrToken: token,
         rollNumber: roll,
         code: overrideCode.trim(),
+        deviceFingerprint,
       });
-      if (res.duplicate) {
+      if (res.deviceBlocked) {
+        setDeviceBlockedRoll(res.blockedRoll ?? null);
+        setStep('device_blocked');
+      } else if (res.duplicate) {
         setStep('duplicate');
       } else if (res.record) {
         setResult({ record: res.record });
@@ -255,6 +275,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
     setError('');
     setResult(null);
     setDuplicateInfo(null);
+    setDeviceBlockedRoll(null);
     setStep('roll');
   }
 
@@ -442,6 +463,31 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
                   Recorded at {new Date(duplicateInfo.markedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                 </p>
               )}
+            </div>
+            <button onClick={reset} className="btn-secondary w-full">Close</button>
+          </div>
+        )}
+
+        {step === 'device_blocked' && (
+          <div className="flex flex-col items-center gap-4 py-8 text-center animate-scale-in">
+            <div className="w-16 h-16 rounded-full bg-red-50 dark:bg-red-500/10 flex items-center justify-center">
+              <svg className="w-8 h-8 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m0 0v2m0-2h2m-2 0H10M9 7H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V9a2 2 0 00-2-2h-2M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M9 7h6" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-xl font-bold text-slate-900 dark:text-slate-100">Device Already Used</p>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">
+                This device has already been used to mark attendance
+                {deviceBlockedRoll ? (
+                  <> for <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">{deviceBlockedRoll}</span></>
+                ) : null}{' '}
+                in this session.
+              </p>
+              <p className="text-slate-400 dark:text-slate-500 text-xs mt-2">
+                Only one attendance per device is allowed per session.<br />
+                If you genuinely need to mark attendance, please ask your instructor to add you manually.
+              </p>
             </div>
             <button onClick={reset} className="btn-secondary w-full">Close</button>
           </div>

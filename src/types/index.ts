@@ -38,7 +38,16 @@ export interface CourseSettings {
   qr_token_validity_seconds: number;
 }
 
-export const SESSION_TYPE_PRESETS = ['Theory', 'Practical', 'Yoga', 'Extracurricular'] as const;
+export const SESSION_TYPE_PRESETS = [
+  'Lecture',
+  'Lab',
+  'Colloquium',
+  'Special Session',
+  'Workshop',
+  'Seminar',
+  'Tutorial',
+  'Exam',
+] as const;
 export type SessionStatus = 'active' | 'ended';
 
 export interface Session {
@@ -123,37 +132,9 @@ export interface StudentAttendanceSummary {
   attendance_percentage: number;
 }
 
-export interface GradeCategory {
-  id: string;
-  name: string;
-  weight_percent: number;
-  max_score: number;
-  attendance_linked: boolean;
-  position: number;
-  created_at: string;
-}
-
-export interface GradeEntry {
-  id: string;
-  category_id: string;
-  student_id: string;
-  score: number;
-  notes?: string | null;
-  updated_by?: string | null;
-  updated_at: string;
-}
-
-export interface GradeScaleBand {
-  id: string;
-  label: string;
-  min_percent: number;
-  max_percent: number;
-  color?: string | null;
-  position: number;
-}
-
 export interface ActivityRound {
   id: string;
   name: string;
   created_at: string;
 }
+

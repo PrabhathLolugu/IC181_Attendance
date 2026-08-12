@@ -20,7 +20,19 @@ export function useAuth(): AuthState {
         if (active) setState({ loading: false, staff: null, session: null });
         return;
       }
-      const { data } = await supabase.from('staff').select('*').eq('id', session.user.id).maybeSingle();
+      let { data } = await supabase.from('staff').select('*').eq('id', session.user.id).maybeSingle();
+      if (!data && session.user) {
+        // Auto-provision staff account for signed up users
+        const name = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
+        const { data: created } = await supabase.from('staff').insert({
+          id: session.user.id,
+          email: session.user.email || '',
+          name,
+          role: 'admin',
+          status: 'active',
+        }).select().maybeSingle();
+        data = created;
+      }
       if (active) setState({ loading: false, staff: (data as Staff) ?? null, session });
     }
 

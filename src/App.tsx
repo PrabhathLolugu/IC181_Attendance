@@ -7,7 +7,6 @@ import { DashboardPage } from './features/dashboard/DashboardPage';
 import { LiveSessionPage } from './features/attendance/LiveSessionPage';
 import { StudentsPage } from './features/students/StudentsPage';
 import { ReportsPage } from './features/reports/ReportsPage';
-import { GradesPage } from './features/grades/GradesPage';
 import { AdminPage } from './features/admin/AdminPage';
 import { AuditPage } from './features/admin/AuditPage';
 import { SettingsPage } from './features/settings/SettingsPage';
@@ -27,8 +26,8 @@ export default function App() {
   const [studentMode, setStudentMode] = useState(false);
   const [attendToken, setAttendToken] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [defaultCourseName, setDefaultCourseName] = useState('IC181');
-  const [currentCourse, setCurrentCourseState] = useState(() => localStorage.getItem('sa_current_course') || 'IC181');
+  const [defaultCourseName, setDefaultCourseName] = useState('General Class');
+  const [currentCourse, setCurrentCourseState] = useState(() => localStorage.getItem('sa_current_course') || 'General Class');
   const [knownCourses, setKnownCourses] = useState<string[]>([]);
   const [liveSessionCount, setLiveSessionCount] = useState(0);
   const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
@@ -121,9 +120,9 @@ export default function App() {
   if (!staff) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-50 dark:bg-[#0d1117] p-6 text-center">
-        <p className="text-lg font-bold text-slate-900 dark:text-slate-100">No staff access on this account</p>
+        <p className="text-lg font-bold text-slate-900 dark:text-slate-100">Setting up your profile…</p>
         <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm">
-          You're signed in, but this email isn't registered as an admin or TA. Ask an administrator to add you.
+          Creating your account access. Please wait a moment or sign in again.
         </p>
         <button onClick={handleLogout} className="btn-secondary">Sign out</button>
       </div>
@@ -149,7 +148,6 @@ export default function App() {
       case 'live_session': return <LiveSessionPage staff={staff} courseName={currentCourse} />;
       case 'students': return <StudentsPage staff={staff} courseName={currentCourse} />;
       case 'reports': return <ReportsPage staff={staff} courseName={currentCourse} focusSessionId={focusSessionId} onFocusHandled={() => setFocusSessionId(null)} />;
-      case 'grades': return <GradesPage staff={staff} courseName={currentCourse} />;
       case 'admin': return <AdminPage staff={staff} />;
       case 'audit': return <AuditPage />;
       case 'settings': return <SettingsPage />;

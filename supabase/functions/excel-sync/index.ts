@@ -15,7 +15,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const fromDate: string | undefined = body.fromDate || undefined;
     const toDate: string | undefined = body.toDate || undefined;
-    const courseName: string = body.courseName || "IC181";
+    const courseName: string = body.courseName || "General Class";
 
     const db = serviceClient();
 

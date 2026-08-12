@@ -16,6 +16,12 @@ Deno.serve(async (req: Request) => {
     const roll = String(body.rollNumber ?? "").trim().toUpperCase();
     if (!roll) return withCors({ error: "Roll number is required." }, 400);
 
+    // device_fingerprint is optional (sent by the student web app).
+    // If absent (e.g. very old browsers), we skip device locking for that submission.
+    const deviceFingerprint = body.deviceFingerprint
+      ? String(body.deviceFingerprint).trim().slice(0, 64) || null
+      : null;
+
     const db = serviceClient();
 
     const { data: session } = await db.from("sessions").select("*").eq("id", qrCheck.payload.sid).maybeSingle();
@@ -32,6 +38,31 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // ── Device fingerprint check ─────────────────────────────────────────────
+    // If this device has already marked attendance for someone else this session,
+    // block it immediately — this is a proxy attempt.
+    if (deviceFingerprint) {
+      const { data: deviceRecord } = await db
+        .from("attendance_records")
+        .select("roll_number, student_id")
+        .eq("session_id", session.id)
+        .eq("device_fingerprint", deviceFingerprint)
+        .maybeSingle();
+
+      if (deviceRecord) {
+        if (deviceRecord.student_id !== student.id) {
+          // A DIFFERENT student already marked from this device → proxy blocked.
+          return withCors(
+            { deviceBlocked: true, blockedRoll: deviceRecord.roll_number },
+            409,
+          );
+        }
+        // Same student, same device → treat as a duplicate (already marked).
+        // Fall through to the existing duplicate check below.
+      }
+    }
+
+    // ── Student duplicate check ───────────────────────────────────────────────
     const { data: existing } = await db
       .from("attendance_records")
       .select("marked_at, status")
@@ -57,6 +88,7 @@ Deno.serve(async (req: Request) => {
             distance_meters: distance,
             reason,
             status: "pending",
+            device_fingerprint: deviceFingerprint,
           },
           { onConflict: "session_id,student_id", ignoreDuplicates: true },
         );
@@ -99,12 +131,20 @@ Deno.serve(async (req: Request) => {
         gps_lat: lat,
         gps_lng: lng,
         gps_accuracy: Number.isFinite(Number(body.accuracy)) ? Number(body.accuracy) : null,
+        device_fingerprint: deviceFingerprint,
       })
       .select()
       .single();
 
     if (insertErr) {
-      if (insertErr.code === "23505") return withCors({ duplicate: true });
+      // 23505 = unique_violation. Could be either student_id or device_fingerprint unique constraint.
+      if (insertErr.code === "23505") {
+        // Distinguish: is this a student duplicate or a device duplicate?
+        if (insertErr.message?.includes("device")) {
+          return withCors({ deviceBlocked: true }, 409);
+        }
+        return withCors({ duplicate: true });
+      }
       return withCors({ error: "Could not record attendance. Please try again." }, 500);
     }
 

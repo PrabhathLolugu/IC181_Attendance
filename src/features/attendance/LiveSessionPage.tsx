@@ -285,7 +285,7 @@ function StartSessionPanel({
 }) {
   const [courseChoice, setCourseChoice] = useState<'default' | 'custom'>('default');
   const [customCourse, setCustomCourse] = useState('');
-  const [typeChoice, setTypeChoice] = useState<string>('Theory');
+  const [typeChoice, setTypeChoice] = useState<string>('Lecture');
   const [customType, setCustomType] = useState('');
   const [allowOverride, setAllowOverride] = useState(true);
   const [audience, setAudience] = useState<'general' | 'group'>('general');
