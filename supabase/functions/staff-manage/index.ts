@@ -13,35 +13,53 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const db = serviceClient();
 
-    if (body.action === "invite") {
+    if (body.action === "create" || body.action === "invite") {
       const email = String(body.email ?? "").trim().toLowerCase();
       const name = String(body.name ?? "").trim();
+      const password = String(body.password ?? "");
       const role = body.role === "admin" ? "admin" : "ta";
-      if (!email || !name) return withCors({ error: "Name and email are required." }, 400);
 
-      const { data: invited, error: inviteErr } = await db.auth.admin.inviteUserByEmail(email);
-      if (inviteErr || !invited?.user) {
-        return withCors({ error: inviteErr?.message || "Could not send invitation." }, 500);
+      if (!email || !name) return withCors({ error: "Name and email are required." }, 400);
+      if (!password || password.length < 6) return withCors({ error: "Password must be at least 6 characters." }, 400);
+
+      // Create user directly with password and auto-confirm email (no email sent)
+      const { data: newUser, error: createErr } = await db.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name },
+      });
+
+      if (createErr || !newUser?.user) {
+        return withCors({ error: createErr?.message || "Could not create user account." }, 500);
       }
 
       const { data: staffRow, error: staffErr } = await db
         .from("staff")
-        .insert({ id: invited.user.id, email, name, role, created_by: auth.staff.id })
+        .upsert({
+          id: newUser.user.id,
+          email,
+          name,
+          role,
+          status: "active",
+          created_by: auth.staff.id,
+        })
         .select()
         .single();
 
       if (staffErr) {
-        return withCors({ error: "Invitation sent, but the staff record could not be created: " + staffErr.message }, 500);
+        return withCors({ error: "User account created, but staff profile could not be saved: " + staffErr.message }, 500);
       }
 
       await logAudit({
         actorId: auth.staff.id,
         actorLabel: auth.staff.email,
-        action: "staff_invited",
+        action: "staff_created",
         entityType: "staff",
         entityId: staffRow.id,
         after: staffRow,
       });
+
       return withCors({ staff: staffRow });
     }
 

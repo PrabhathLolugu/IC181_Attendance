@@ -12,7 +12,7 @@ interface Props { staff: Staff; }
 export function AdminPage({ staff }: Props) {
   const [team, setTeam] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showInvite, setShowInvite] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,9 +43,9 @@ export function AdminPage({ staff }: Props) {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Administration</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Manage who can access SmartAttend and what they can do.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Manage admins and TAs for your classes.</p>
         </div>
-        <button onClick={() => setShowInvite(true)} className="btn-primary btn-sm">Invite Staff</button>
+        <button onClick={() => setShowAddModal(true)} className="btn-primary btn-sm">+ Add Staff Member</button>
       </div>
 
       {loading ? (
@@ -57,7 +57,7 @@ export function AdminPage({ staff }: Props) {
         </>
       )}
 
-      <InviteModal open={showInvite} onClose={() => setShowInvite(false)} onInvited={() => { setShowInvite(false); load(); }} />
+      <AddStaffModal open={showAddModal} onClose={() => setShowAddModal(false)} onAdded={() => { setShowAddModal(false); load(); }} />
     </main>
   );
 }
@@ -109,49 +109,55 @@ function TeamGroup({
   );
 }
 
-function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () => void; onInvited: () => void }) {
+function AddStaffModal({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: () => void }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [role, setRole] = useState<StaffRole>('ta');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  async function handleInvite() {
+  async function handleAdd() {
     if (!name.trim() || !email.trim()) { setError('Name and email are required.'); return; }
+    if (!password || password.length < 6) { setError('Password must be at least 6 characters.'); return; }
     setLoading(true);
     setError('');
     try {
-      await callFunction('staff-manage', { action: 'invite', name: name.trim(), email: email.trim(), role });
-      toast('success', `Invitation sent to ${email}.`);
-      setName(''); setEmail(''); setRole('ta');
-      onInvited();
+      await callFunction('staff-manage', { action: 'create', name: name.trim(), email: email.trim(), password, role });
+      toast('success', `Added ${name} (${role.toUpperCase()}). Account ready immediately.`);
+      setName(''); setEmail(''); setPassword(''); setRole('ta');
+      onAdded();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not send invitation.');
+      setError(e instanceof Error ? e.message : 'Could not create staff account.');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Invite Staff" subtitle="They'll receive an email to set their own password.">
+    <Modal open={open} onClose={onClose} title="Add Staff Member" subtitle="Creates their account immediately with the password you specify. No email confirmation needed.">
       <div className="flex flex-col gap-4">
         <div>
           <label className="label">Full Name</label>
-          <input className="input-base" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <input className="input-base" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Dr. Sarah Jenkins" autoFocus />
         </div>
         <div>
-          <label className="label">Email</label>
-          <input className="input-base" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@institution.edu" />
+          <label className="label">Email Address</label>
+          <input className="input-base" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="sarah@institution.edu" />
+        </div>
+        <div>
+          <label className="label">Password (Share this with them personally)</label>
+          <input className="input-base" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
         </div>
         <div>
           <label className="label">Role</label>
           <select value={role} onChange={(e) => setRole(e.target.value as StaffRole)} className="input-base">
             <option value="ta">TA — run sessions, mark attendance, view students</option>
-            <option value="admin">Admin — full control</option>
+            <option value="admin">Admin — full control (can add/manage classes and staff)</option>
           </select>
         </div>
         {error && <div className="px-4 py-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl text-red-700 dark:text-red-400 text-xs">{error}</div>}
-        <button onClick={handleInvite} disabled={loading} className="btn-primary w-full h-11">{loading ? 'Sending…' : 'Send Invitation'}</button>
+        <button onClick={handleAdd} disabled={loading} className="btn-primary w-full h-11">{loading ? 'Creating Account…' : 'Create Staff Account'}</button>
       </div>
     </Modal>
   );
