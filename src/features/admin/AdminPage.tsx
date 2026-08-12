@@ -141,7 +141,7 @@ function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () 
         </div>
         <div>
           <label className="label">Email</label>
-          <input className="input-base" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@iitmandi.ac.in" />
+          <input className="input-base" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@institution.edu" />
         </div>
         <div>
           <label className="label">Role</label>
