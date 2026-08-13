@@ -36,6 +36,15 @@ export function LiveSessionPage({ staff, courseName }: Props) {
     setSelectedId((prev) => (prev && data?.some((s) => s.id === prev) ? prev : data?.[0]?.id ?? null));
   }, [courseName]);
 
+  const handleSessionStarted = useCallback((newSession?: Session, token?: string) => {
+    if (newSession) {
+      setSessions((prev) => [newSession, ...prev.filter((s) => s.id !== newSession.id)]);
+      setSelectedId(newSession.id);
+      if (token) setQrToken(token);
+    }
+    loadSessions();
+  }, [loadSessions]);
+
   const loadPickerData = useCallback(async () => {
     const [{ data: groups }, { data: roundSessions }] = await Promise.all([
       supabase.from('students').select('group_label').eq('status', 'active').not('group_label', 'is', null),
@@ -109,8 +118,24 @@ export function LiveSessionPage({ staff, courseName }: Props) {
   async function handleEndSession() {
     if (!selected) return;
     if (!window.confirm('End this session? Students will no longer be able to mark attendance for it.')) return;
-    await supabase.from('sessions').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', selected.id);
-    toast('info', 'Session ended.');
+    
+    const targetId = selected.id;
+
+    // Optimistic UI update — 0ms immediate UI transition
+    setSessions((prev) => {
+      const next = prev.filter((s) => s.id !== targetId);
+      setSelectedId(next[0]?.id ?? null);
+      return next;
+    });
+
+    try {
+      await supabase.from('sessions').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', targetId);
+      toast('info', 'Session ended.');
+    } catch {
+      toast('error', 'Could not end session.');
+    } finally {
+      loadSessions();
+    }
   }
 
   async function handleResolveOverride(o: GpsOverrideRequest, action: 'approve' | 'reject') {
@@ -140,7 +165,7 @@ export function LiveSessionPage({ staff, courseName }: Props) {
   if (sessions.length === 0) {
     return (
       <main className="page">
-        <StartSessionPanel staff={staff} onStarted={loadSessions} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={courseName} groupChoices={groupChoices} roundChoices={roundChoices} onPickerDataChanged={loadPickerData} />
+        <StartSessionPanel staff={staff} onStarted={handleSessionStarted} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={courseName} groupChoices={groupChoices} roundChoices={roundChoices} onPickerDataChanged={loadPickerData} />
       </main>
     );
   }
@@ -258,7 +283,7 @@ export function LiveSessionPage({ staff, courseName }: Props) {
         ))}
 
       <Modal open={showStart} onClose={() => setShowStart(false)} title="Start Another Session" size="sm">
-        <StartSessionPanel staff={staff} embedded onStarted={() => { setShowStart(false); loadSessions(); }} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={courseName} groupChoices={groupChoices} roundChoices={roundChoices} onPickerDataChanged={loadPickerData} />
+        <StartSessionPanel staff={staff} embedded onStarted={(s, t) => { setShowStart(false); handleSessionStarted(s, t); }} defaultRadius={settings?.gps_radius_meters ?? 100} defaultCourseName={courseName} groupChoices={groupChoices} roundChoices={roundChoices} onPickerDataChanged={loadPickerData} />
       </Modal>
 
       {selected && (
@@ -280,7 +305,7 @@ function StatMini({ label, value, color }: { label: string; value: number; color
 function StartSessionPanel({
   staff, onStarted, defaultRadius, defaultCourseName, groupChoices, roundChoices, onPickerDataChanged, embedded,
 }: {
-  staff: Staff; onStarted: () => void; defaultRadius: number; defaultCourseName: string;
+  staff: Staff; onStarted: (session?: Session, qrToken?: string) => void; defaultRadius: number; defaultCourseName: string;
   groupChoices: string[]; roundChoices: ActivityRound[]; onPickerDataChanged: () => void; embedded?: boolean;
 }) {
   const [courseChoice, setCourseChoice] = useState<'default' | 'custom'>('default');
@@ -311,7 +336,7 @@ function StartSessionPanel({
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
-          await callFunction('session-start', {
+          const res = await callFunction<{ session: Session; qrToken: string }>('session-start', {
             sessionType,
             courseName,
             lat: pos.coords.latitude,
@@ -323,7 +348,7 @@ function StartSessionPanel({
             newRoundName: roundChoice === '__new__' ? newRoundName.trim() : undefined,
           });
           toast('success', 'Session started.');
-          onStarted();
+          onStarted(res.session, res.qrToken);
           onPickerDataChanged();
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Could not start the session.');
@@ -425,4 +450,3 @@ function StartSessionPanel({
     </div>
   );
 }
-
