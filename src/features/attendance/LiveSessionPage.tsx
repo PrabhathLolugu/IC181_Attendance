@@ -10,9 +10,9 @@ import { timeAgo, formatTime } from '../../lib/utils';
 import { SESSION_TYPE_PRESETS } from '../../types';
 import type { Staff, Session, AttendanceRecord, GpsOverrideRequest, CourseSettings, ActivityRound } from '../../types';
 
-interface Props { staff: Staff; courseName: string; }
+interface Props { staff: Staff; courseName: string; onCourseChange?: (course: string) => void; }
 
-export function LiveSessionPage({ staff, courseName }: Props) {
+export function LiveSessionPage({ staff, courseName, onCourseChange }: Props) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -41,9 +41,12 @@ export function LiveSessionPage({ staff, courseName }: Props) {
       setSessions((prev) => [newSession, ...prev.filter((s) => s.id !== newSession.id)]);
       setSelectedId(newSession.id);
       if (token) setQrToken(token);
+      if (newSession.course_name && onCourseChange) {
+        onCourseChange(newSession.course_name);
+      }
     }
     loadSessions();
-  }, [loadSessions]);
+  }, [loadSessions, onCourseChange]);
 
   const loadPickerData = useCallback(async () => {
     const [{ data: groups }, { data: roundSessions }] = await Promise.all([

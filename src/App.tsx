@@ -66,7 +66,7 @@ export default function App() {
     });
 
     async function refreshLiveCount() {
-      const { count } = await supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('status', 'active').eq('course_name', currentCourse);
+      const { count } = await supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('status', 'active');
       setLiveSessionCount(count ?? 0);
     }
     refreshLiveCount();
@@ -145,7 +145,7 @@ export default function App() {
   const renderPage = () => {
     switch (effectiveTab) {
       case 'dashboard': return <DashboardPage staff={staff} onNavigate={setActiveTab} onOpenSession={openSession} courseName={currentCourse} />;
-      case 'live_session': return <LiveSessionPage staff={staff} courseName={currentCourse} />;
+      case 'live_session': return <LiveSessionPage staff={staff} courseName={currentCourse} onCourseChange={setCurrentCourse} />;
       case 'students': return <StudentsPage staff={staff} courseName={currentCourse} />;
       case 'reports': return <ReportsPage staff={staff} courseName={currentCourse} focusSessionId={focusSessionId} onFocusHandled={() => setFocusSessionId(null)} />;
       case 'admin': return <AdminPage staff={staff} />;
