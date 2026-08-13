@@ -205,7 +205,7 @@ export function ReportsPage({ staff, courseName, focusSessionId, onFocusHandled 
             <table className="data-table min-w-[820px]">
               <thead>
                 <tr>
-                  <Th label="Roll" sortKey="roll_number" sort={studentSort} onSort={toggleStudentSort} />
+                  <Th label="Roll / Emp ID" sortKey="roll_number" sort={studentSort} onSort={toggleStudentSort} />
                   <Th label="Name" sortKey="name" sort={studentSort} onSort={toggleStudentSort} />
                   <Th label="Present" sortKey="present_count" sort={studentSort} onSort={toggleStudentSort} />
                   <Th label="Excused" sortKey="excused_count" sort={studentSort} onSort={toggleStudentSort} />
@@ -571,13 +571,11 @@ function StudentDetailModal({
       subtitle={`${summary.roll_number} · ${summary.group_label ?? 'No group'} · ${summary.attendance_percentage}% overall`}
     >
       {profile && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 mb-4 pb-4 border-b border-slate-100 dark:border-[#21262d]">
-          <ProfileField label="Email" value={profile.email} />
-          <ProfileField label="Phone" value={profile.phone} />
-          <ProfileField label="Department" value={profile.department} />
-          <ProfileField label="Program" value={profile.program} />
-          <ProfileField label="Semester" value={profile.semester} />
-          <ProfileField label="Batch" value={profile.batch} />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 mb-4 pb-4 border-b border-slate-100 dark:border-[#21262d]">
+          <ProfileField label="Roll / Emp ID" value={profile.roll_number} />
+          <ProfileField label="Role" value={profile.role_type === 'faculty' ? 'Faculty / Staff' : 'Student'} />
+          <ProfileField label="School / Centre" value={profile.department} />
+          {profile.role_type !== 'faculty' && <ProfileField label="Program" value={profile.program} />}
         </div>
       )}
       {loading ? (

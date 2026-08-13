@@ -91,11 +91,12 @@ INSERT INTO public.course_settings (id, course_name, gps_radius_meters, override
 VALUES (TRUE, 'Default Class', 100, 180, 25, 1800)
 ON CONFLICT (id) DO NOTHING;
 
--- 5. Students
+-- 5. Students / Participants
 CREATE TABLE IF NOT EXISTS public.students (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   roll_number TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
+  role_type TEXT NOT NULL DEFAULT 'student' CHECK (role_type IN ('student', 'faculty')),
   email TEXT,
   phone TEXT,
   department TEXT,

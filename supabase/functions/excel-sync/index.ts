@@ -21,7 +21,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: students } = await db
       .from("students")
-      .select("roll_number, name, group_label")
+      .select("roll_number, name, role_type, department, program, group_label")
       .eq("status", "active")
       .order("roll_number");
     const { data: summaries } = await db.rpc("student_attendance_summary", { p_course_name: courseName });
@@ -44,8 +44,11 @@ Deno.serve(async (req: Request) => {
     const sheet = workbook.addWorksheet(sheetName);
 
     sheet.columns = [
-      { header: "Roll Number", key: "roll", width: 16 },
+      { header: "Roll / Emp ID", key: "roll", width: 16 },
       { header: "Name", key: "name", width: 26 },
+      { header: "Role", key: "role", width: 16 },
+      { header: "School / Centre", key: "dept", width: 30 },
+      { header: "Program", key: "prog", width: 16 },
       { header: "Group", key: "group", width: 10 },
       ...(sessions ?? []).map((s) => ({
         header: `${s.session_date} · ${s.course_name} (${s.session_type})${s.round_id ? " ↻" : ""}`,
@@ -62,6 +65,9 @@ Deno.serve(async (req: Request) => {
       const row: Record<string, string | number> = {
         roll: student.roll_number,
         name: student.name,
+        role: student.role_type === 'faculty' ? 'Faculty / Staff' : 'Student',
+        dept: student.department ?? "",
+        prog: student.program ?? "",
         group: student.group_label ?? "",
       };
       for (const s of sessions ?? []) {

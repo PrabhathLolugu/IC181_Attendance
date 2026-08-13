@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { getDeviceFingerprint } from '../../lib/deviceFingerprint';
 import { callFunction } from '../../lib/api';
 import { CameraScanner } from '../../components/shared/CameraScanner';
-import type { Student, Session, AttendanceRecord } from '../../types';
+import type { Student, Session, AttendanceRecord, ParticipantType } from '../../types';
 
 type Step =
   | 'need_token'
@@ -31,16 +31,33 @@ interface Position {
 
 interface EnrollForm {
   name: string;
-  email: string;
-  phone: string;
-  department: string;
-  program: string;
-  semester: string;
-  batch: string;
+  roleType: ParticipantType;
+  department: string; // School / Centre
+  program: string;    // B.Tech, M.Tech, Ph.D., etc.
 }
 
+const SCHOOL_PRESETS = [
+  'School of Computing & Electrical Engineering (SCEE)',
+  'School of Mechanical & Materials Engineering (SMME)',
+  'School of Basic Sciences (SBS)',
+  'School of Humanities & Social Sciences (SHSS)',
+  'School of Bioscience & Bioengineering (SBB)',
+  'School of Chemical Sciences (SCS)',
+  'Indian Knowledge System and Mental Health Applications (IKSMHA)',
+];
+
+const PROGRAM_PRESETS = [
+  'B.Tech',
+  'M.Tech',
+  'Ph.D.',
+  'M.Sc.',
+  'M.S.',
+  'B.Sc.',
+  'Dual Degree',
+];
+
 const emptyEnrollForm: EnrollForm = {
-  name: '', email: '', phone: '', department: '', program: '', semester: '', batch: '',
+  name: '', roleType: 'student', department: SCHOOL_PRESETS[0], program: 'B.Tech',
 };
 
 export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
@@ -52,10 +69,13 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
   const [position, setPosition] = useState<Position | null>(null);
   const [gpsDenied, setGpsDenied] = useState(false);
 
+  const [roleType, setRoleType] = useState<ParticipantType>('student');
   const [roll, setRoll] = useState('');
   const [rollLoading, setRollLoading] = useState(false);
   const [student, setStudent] = useState<Student | null>(null);
   const [enrollForm, setEnrollForm] = useState<EnrollForm>(emptyEnrollForm);
+  const [customDept, setCustomDept] = useState('');
+  const [customProg, setCustomProg] = useState('');
 
   const [overrideCode, setOverrideCode] = useState('');
   const [overrideReason, setOverrideReason] = useState<string>('');
@@ -153,7 +173,10 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
 
   async function handleRollSubmit() {
     const cleaned = roll.trim().toUpperCase();
-    if (!cleaned) { setError('Please enter your roll number.'); return; }
+    if (!cleaned) {
+      setError(roleType === 'faculty' ? 'Please enter your Employee ID.' : 'Please enter your roll number.');
+      return;
+    }
     setRoll(cleaned);
     setRollLoading(true);
     setError('');
@@ -182,16 +205,18 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
         setStudent(res.student);
         setEnrollForm({
           name: res.student.name,
-          email: res.student.email ?? '',
-          phone: res.student.phone ?? '',
-          department: res.student.department ?? '',
-          program: res.student.program ?? '',
-          semester: res.student.semester ?? '',
-          batch: res.student.batch ?? '',
+          roleType: res.student.role_type ?? roleType,
+          department: res.student.department ?? SCHOOL_PRESETS[0],
+          program: res.student.program ?? 'B.Tech',
         });
         setStep('confirm');
       } else {
-        setEnrollForm(emptyEnrollForm);
+        setEnrollForm({
+          name: '',
+          roleType,
+          department: SCHOOL_PRESETS[0],
+          program: 'B.Tech',
+        });
         setStep('enroll');
       }
     } catch (e) {
@@ -203,12 +228,21 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
 
   async function handleEnrollSubmit() {
     if (!enrollForm.name.trim()) { setError('Please enter your full name.'); return; }
+    const dept = enrollForm.department === '__custom__' ? customDept.trim() : enrollForm.department;
+    const prog = enrollForm.program === '__custom__' ? customProg.trim() : enrollForm.program;
+
+    if (!dept) { setError('Please specify your School / Centre.'); return; }
+    if (enrollForm.roleType === 'student' && !prog) { setError('Please specify your Program.'); return; }
+
     setRollLoading(true);
     setError('');
     try {
       const res = await callFunction<{ student?: Student; error?: string; code?: string }>('student-enroll', {
         rollNumber: roll,
-        ...enrollForm,
+        name: enrollForm.name.trim(),
+        roleType: enrollForm.roleType,
+        department: dept,
+        program: enrollForm.roleType === 'student' ? prog : undefined,
       });
       if (res.student) {
         setStudent(res.student);
@@ -217,7 +251,6 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Registration failed.';
       if (message.includes('already registered')) {
-        // someone else registered this roll number a moment ago — fetch and continue
         try {
           const check = await callFunction<{ exists: boolean; student?: Student }>('student-check', { rollNumber: roll });
           if (check.exists && check.student) {
@@ -227,7 +260,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
             return;
           }
         } catch {
-          /* fall through to showing the original error */
+          /* fall through */
         }
       }
       setError(message);
@@ -271,6 +304,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
         setOverrideReason(res.reason ?? '');
         setStep('override_pending');
       } else if (res.record) {
+        localStorage.setItem('sa_student_roll', roll);
         setResult({ record: res.record, session: res.session });
         setStep('success');
       } else {
@@ -312,6 +346,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
       } else if (res.duplicate) {
         setStep('duplicate');
       } else if (res.record) {
+        localStorage.setItem('sa_student_roll', roll);
         setResult({ record: res.record });
         setStep('success');
       }
@@ -342,7 +377,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
         <div className="flex items-center gap-2 mb-8 justify-center">
           <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center">
             <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
             </svg>
           </div>
           <span className="font-bold text-slate-900 dark:text-slate-100 text-lg">SmartAttend</span>
@@ -351,7 +386,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
         {step === 'need_token' && (
           <div className="animate-slide-up text-center">
             <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Mark Attendance</h2>
-            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Scan the QR code your instructor is showing in class.</p>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Scan the QR code shown in class / event.</p>
             <button onClick={() => setShowScanner(true)} className="btn-primary w-full h-12 mt-6">Scan QR Code</button>
             {onBack && (
               <button onClick={onBack} className="mt-4 w-full text-center text-sm text-slate-400 hover:text-slate-600 transition-colors">
@@ -365,7 +400,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
           <div className="animate-slide-up">
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Enable Location</h2>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-              We use your location once to verify you're physically present in class.
+              We use your location once to verify physical presence.
             </p>
             <div className="mt-6 flex flex-col gap-3">
               <button onClick={requestGps} disabled={gpsLoading} className="btn-primary w-full h-12">
@@ -380,13 +415,34 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
 
         {step === 'roll' && (
           <div className="animate-slide-up">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Enter Your Roll Number</h2>
-            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">We'll fetch your details automatically.</p>
+            <div className="flex bg-slate-200 dark:bg-[#161b22] p-1 rounded-xl mb-6">
+              <button
+                type="button"
+                onClick={() => { setRoleType('student'); setError(''); }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-colors ${roleType === 'student' ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400'}`}
+              >
+                🎓 Student
+              </button>
+              <button
+                type="button"
+                onClick={() => { setRoleType('faculty'); setError(''); }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-colors ${roleType === 'faculty' ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400'}`}
+              >
+                🏛️ Faculty / Staff
+              </button>
+            </div>
+
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              {roleType === 'faculty' ? 'Enter Employee ID' : 'Enter Roll Number'}
+            </h2>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+              {roleType === 'faculty' ? 'Enter your employee / staff ID.' : 'Enter your student roll number.'}
+            </p>
             <div className="mt-6 flex flex-col gap-4">
               <input
                 ref={rollRef}
                 className="input-base text-lg tracking-widest text-center h-14 font-mono font-bold"
-                placeholder="B23CS001"
+                placeholder={roleType === 'faculty' ? 'EMP1024' : 'B23CS001'}
                 value={roll}
                 onChange={(e) => { setRoll(e.target.value.toUpperCase()); setError(''); }}
                 onKeyDown={(e) => e.key === 'Enter' && handleRollSubmit()}
@@ -404,33 +460,26 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
         {step === 'confirm' && student && (
           <div className="animate-slide-up">
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Confirm Your Details</h2>
-            <div className="mt-4 card p-4 flex flex-col gap-1.5">
-              <p className="font-semibold text-slate-900 dark:text-slate-100">{student.name}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{student.roll_number}</p>
+            <div className="mt-4 card p-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-slate-900 dark:text-slate-100">{student.name}</p>
+                <span className="badge-blue uppercase text-[10px]">{student.role_type === 'faculty' ? 'Faculty / Staff' : 'Student'}</span>
+              </div>
+              <p className="text-xs text-slate-500 font-mono">{student.roll_number}</p>
               <div className="flex flex-wrap gap-1.5 mt-1">
-                {[student.department, student.program, student.semester && `Sem ${student.semester}`, student.group_label && `Group ${student.group_label}`, student.batch]
-                  .filter(Boolean)
-                  .map((v) => (
-                    <span key={String(v)} className="badge-slate">{v}</span>
-                  ))}
+                {student.department && <span className="badge-slate">{student.department}</span>}
+                {student.program && <span className="badge-slate">{student.program}</span>}
               </div>
             </div>
-            <div className="mt-4 flex flex-col gap-3">
-              <div>
-                <label className="label">Email</label>
-                <input className="input-base" value={enrollForm.email} onChange={(e) => setEnrollForm((f) => ({ ...f, email: e.target.value }))} />
-              </div>
-              <div>
-                <label className="label">Phone</label>
-                <input className="input-base" value={enrollForm.phone} onChange={(e) => setEnrollForm((f) => ({ ...f, phone: e.target.value }))} />
-              </div>
-            </div>
+
             {error && <ErrorBox message={error} className="mt-3" />}
             <div className="mt-6 flex flex-col gap-2">
               <button onClick={handleConfirm} disabled={rollLoading} className="btn-primary w-full h-12">
                 {rollLoading ? 'Marking attendance…' : 'Confirm & Mark Attendance'}
               </button>
-              <button onClick={reset} className="btn-ghost w-full text-xs">Not you? Use a different roll number</button>
+              <button onClick={reset} className="btn-ghost w-full text-xs">
+                Not you? Use a different {roleType === 'faculty' ? 'Employee ID' : 'roll number'}
+              </button>
             </div>
           </div>
         )}
@@ -439,43 +488,55 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
           <div className="animate-slide-up">
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">First Time Here?</h2>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-              We don't have a profile for <span className="font-mono font-semibold">{roll}</span> yet — add your details once.
+              Add details for <span className="font-mono font-semibold">{roll}</span> ({enrollForm.roleType === 'faculty' ? 'Faculty / Staff' : 'Student'}).
             </p>
-            <div className="mt-4 flex flex-col gap-3">
+            <div className="mt-4 flex flex-col gap-4">
               <div>
                 <label className="label">Full Name *</label>
-                <input className="input-base" value={enrollForm.name} onChange={(e) => setEnrollForm((f) => ({ ...f, name: e.target.value }))} autoFocus />
+                <input className="input-base" placeholder="Dr. Alex Rivera" value={enrollForm.name} onChange={(e) => setEnrollForm((f) => ({ ...f, name: e.target.value }))} autoFocus />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Email</label>
-                  <input className="input-base" type="email" value={enrollForm.email} onChange={(e) => setEnrollForm((f) => ({ ...f, email: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="label">Phone</label>
-                  <input className="input-base" value={enrollForm.phone} onChange={(e) => setEnrollForm((f) => ({ ...f, phone: e.target.value }))} />
-                </div>
+
+              <div>
+                <label className="label">School / Centre *</label>
+                <select
+                  className="input-base text-xs"
+                  value={enrollForm.department}
+                  onChange={(e) => setEnrollForm((f) => ({ ...f, department: e.target.value }))}
+                >
+                  {SCHOOL_PRESETS.map((s) => <option key={s} value={s}>{s}</option>)}
+                  <option value="__custom__">Other…</option>
+                </select>
+                {enrollForm.department === '__custom__' && (
+                  <input
+                    className="input-base mt-2"
+                    placeholder="Enter School / Centre name"
+                    value={customDept}
+                    onChange={(e) => setCustomDept(e.target.value)}
+                  />
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              {enrollForm.roleType === 'student' && (
                 <div>
-                  <label className="label">Department</label>
-                  <input className="input-base" value={enrollForm.department} onChange={(e) => setEnrollForm((f) => ({ ...f, department: e.target.value }))} />
+                  <label className="label">Program *</label>
+                  <select
+                    className="input-base"
+                    value={enrollForm.program}
+                    onChange={(e) => setEnrollForm((f) => ({ ...f, program: e.target.value }))}
+                  >
+                    {PROGRAM_PRESETS.map((p) => <option key={p} value={p}>{p}</option>)}
+                    <option value="__custom__">Other…</option>
+                  </select>
+                  {enrollForm.program === '__custom__' && (
+                    <input
+                      className="input-base mt-2"
+                      placeholder="e.g. M.Sc. Data Science"
+                      value={customProg}
+                      onChange={(e) => setCustomProg(e.target.value)}
+                    />
+                  )}
                 </div>
-                <div>
-                  <label className="label">Program</label>
-                  <input className="input-base" value={enrollForm.program} onChange={(e) => setEnrollForm((f) => ({ ...f, program: e.target.value }))} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Semester</label>
-                  <input className="input-base" value={enrollForm.semester} onChange={(e) => setEnrollForm((f) => ({ ...f, semester: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="label">Batch</label>
-                  <input className="input-base" value={enrollForm.batch} onChange={(e) => setEnrollForm((f) => ({ ...f, batch: e.target.value }))} />
-                </div>
-              </div>
+              )}
             </div>
             {error && <ErrorBox message={error} className="mt-3" />}
             <button onClick={handleEnrollSubmit} disabled={rollLoading} className="btn-primary w-full h-12 mt-5">

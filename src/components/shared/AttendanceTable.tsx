@@ -55,7 +55,7 @@ export function AttendanceTable({
           <div className="px-5 py-10 text-center text-sm text-slate-400">{emptyText}</div>
         ) : (
           <table className="data-table">
-            <thead><tr><th>Roll</th><th>Status</th><th>Method</th><th>Device</th><th>Time</th><th></th></tr></thead>
+            <thead><tr><th>Roll / Emp ID</th><th>Status</th><th>Method</th><th>Device</th><th>Time</th><th></th></tr></thead>
             <tbody>
               {records.map((r) => (
                 <tr key={r.id}>

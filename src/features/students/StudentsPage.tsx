@@ -3,18 +3,19 @@ import { supabase } from '../../services/supabase';
 import { Modal } from '../../components/ui/Modal';
 import { toast } from '../../components/ui/Toast';
 import { pctColor } from '../../lib/utils';
-import type { Staff, Student, StudentAttendanceSummary, StudentStatus } from '../../types';
+import type { Staff, Student, StudentAttendanceSummary, StudentStatus, ParticipantType } from '../../types';
 
 interface Props { staff: Staff; courseName: string; }
 
 const PAGE_SIZE = 20;
 const UNASSIGNED = '__unassigned__';
-const emptyForm = { roll_number: '', name: '', email: '', phone: '', department: '', program: '', semester: '', group_label: '', batch: '' };
+const emptyForm = { roll_number: '', name: '', role_type: 'student' as ParticipantType, department: '', program: '', group_label: '' };
 
 export function StudentsPage({ staff, courseName }: Props) {
   const [students, setStudents] = useState<Student[]>([]);
   const [summaries, setSummaries] = useState<Record<string, StudentAttendanceSummary>>({});
   const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<ParticipantType | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<StudentStatus | 'all'>('active');
   const [groupFilter, setGroupFilter] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
@@ -51,12 +52,10 @@ export function StudentsPage({ staff, courseName }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
 
-    // The attendance % isn't a column on students -- it only exists in the
-    // course-scoped summary RPC -- so a % filter needs that resolved first,
-    // to narrow the roster query by the matching roll numbers.
     let pctSummaryMap: Record<string, StudentAttendanceSummary> | null = null;
     let query = supabase.from('students').select('*', { count: 'exact' }).order('roll_number');
     if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+    if (roleFilter !== 'all') query = query.eq('role_type', roleFilter);
     if (search.trim()) query = query.or(`roll_number.ilike.%${search}%,name.ilike.%${search}%`);
     if (groupFilter === UNASSIGNED) query = query.is('group_label', null);
     else if (groupFilter) query = query.eq('group_label', groupFilter);
@@ -80,12 +79,10 @@ export function StudentsPage({ staff, courseName }: Props) {
     if (pctSummaryMap) setSummaries(pctSummaryMap);
     else await loadSummaries();
     setLoading(false);
-  }, [search, statusFilter, groupFilter, deptFilter, pctFilterActive, minPct, maxPct, page, courseName, loadSummaries]);
+  }, [search, statusFilter, roleFilter, groupFilter, deptFilter, pctFilterActive, minPct, maxPct, page, courseName, loadSummaries]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Attendance changes elsewhere shouldn't reset the roster or an in-progress
-  // bulk-group selection -- just refresh the percentage numbers live.
   useEffect(() => {
     const channel = supabase
       .channel('students_summary_watch')
@@ -98,15 +95,15 @@ export function StudentsPage({ staff, courseName }: Props) {
   async function handleSoftDelete(student: Student) {
     if (!window.confirm(`Remove ${student.name} (${student.roll_number})? This can be restored later.`)) return;
     const { error } = await supabase.from('students').update({ status: 'deleted', updated_by: staff.id }).eq('id', student.id);
-    if (error) { toast('error', 'Could not remove student.'); return; }
-    toast('success', 'Student removed.');
+    if (error) { toast('error', 'Could not remove entry.'); return; }
+    toast('success', 'Entry removed.');
     load();
   }
 
   async function handleRestore(student: Student) {
     const { error } = await supabase.from('students').update({ status: 'active', updated_by: staff.id }).eq('id', student.id);
-    if (error) { toast('error', 'Could not restore student.'); return; }
-    toast('success', 'Student restored.');
+    if (error) { toast('error', 'Could not restore entry.'); return; }
+    toast('success', 'Entry restored.');
     load();
   }
 
@@ -129,7 +126,7 @@ export function StudentsPage({ staff, courseName }: Props) {
       .update({ group_label: bulkGroup.trim().toUpperCase(), updated_by: staff.id })
       .in('id', Array.from(selected));
     if (error) { toast('error', 'Could not assign group.'); return; }
-    toast('success', `Assigned ${selected.size} student(s) to Group ${bulkGroup.trim().toUpperCase()}.`);
+    toast('success', `Assigned ${selected.size} participant(s) to Group ${bulkGroup.trim().toUpperCase()}.`);
     setBulkGroup('');
     load();
   }
@@ -138,28 +135,33 @@ export function StudentsPage({ staff, courseName }: Props) {
     <main className="page">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Students</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{total} {statusFilter === 'all' ? '' : statusFilter} students · Attendance % shown for {courseName}</p>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Participants Roster</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{total} {roleFilter === 'all' ? 'participants' : roleFilter === 'faculty' ? 'faculty / staff' : 'students'} · Attendance % shown for {courseName}</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowImport(true)} className="btn-secondary btn-sm">Import CSV</button>
-          <button onClick={() => setShowAdd(true)} className="btn-primary btn-sm">Add Student</button>
+          <button onClick={() => setShowAdd(true)} className="btn-primary btn-sm">+ Add Participant</button>
         </div>
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
         <input
           className="input-base max-w-xs"
-          placeholder="Search roll number or name…"
+          placeholder="Search Roll / Emp ID or name…"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(0); }}
         />
+        <select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value as ParticipantType | 'all'); setPage(0); }} className="input-base w-auto">
+          <option value="all">All Roles</option>
+          <option value="student">Students</option>
+          <option value="faculty">Faculty / Staff</option>
+        </select>
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value as StudentStatus | 'all'); setPage(0); }} className="input-base w-auto">
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
           <option value="graduated">Graduated</option>
           <option value="deleted">Removed</option>
-          <option value="all">All</option>
+          <option value="all">All Statuses</option>
         </select>
         <select value={groupFilter} onChange={(e) => { setGroupFilter(e.target.value); setPage(0); }} className="input-base w-auto">
           <option value="">All Groups</option>
@@ -167,28 +169,12 @@ export function StudentsPage({ staff, courseName }: Props) {
           {groupChoices.map((g) => <option key={g} value={g}>Group {g}</option>)}
         </select>
         <select value={deptFilter} onChange={(e) => { setDeptFilter(e.target.value); setPage(0); }} className="input-base w-auto">
-          <option value="">All Departments</option>
+          <option value="">All Schools / Centres</option>
           {deptChoices.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
-        <div className="flex items-center gap-1.5">
-          <label className="text-xs text-slate-500 whitespace-nowrap">Attendance %</label>
-          <input
-            type="number" min={0} max={100} placeholder="Min"
-            className="input-base w-20"
-            value={minPct}
-            onChange={(e) => { setMinPct(e.target.value); setPage(0); }}
-          />
-          <span className="text-xs text-slate-400">to</span>
-          <input
-            type="number" min={0} max={100} placeholder="Max"
-            className="input-base w-20"
-            value={maxPct}
-            onChange={(e) => { setMaxPct(e.target.value); setPage(0); }}
-          />
-        </div>
-        {(groupFilter || deptFilter || pctFilterActive) && (
+        {(roleFilter !== 'all' || groupFilter || deptFilter || pctFilterActive) && (
           <button
-            onClick={() => { setGroupFilter(''); setDeptFilter(''); setMinPct(''); setMaxPct(''); setPage(0); }}
+            onClick={() => { setRoleFilter('all'); setGroupFilter(''); setDeptFilter(''); setMinPct(''); setMaxPct(''); setPage(0); }}
             className="text-xs text-blue-600 hover:text-blue-700 font-medium"
           >
             Clear filters
@@ -216,15 +202,15 @@ export function StudentsPage({ staff, courseName }: Props) {
           <thead>
             <tr>
               <th><input type="checkbox" checked={selected.size > 0 && selected.size === students.length} onChange={toggleSelectAll} /></th>
-              <th>Roll</th><th>Name</th><th>Dept / Program</th><th>Group</th><th>Attendance %</th><th>Status</th>
+              <th>Roll / Emp ID</th><th>Name</th><th>Role</th><th>School / Centre</th><th>Program</th><th>Group</th><th>Attendance %</th><th>Status</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="text-center py-10 text-slate-400 text-sm">Loading…</td></tr>
+              <tr><td colSpan={9} className="text-center py-10 text-slate-400 text-sm">Loading…</td></tr>
             ) : students.length === 0 ? (
-              <tr><td colSpan={8} className="text-center py-10 text-slate-400 text-sm">No students found.</td></tr>
+              <tr><td colSpan={9} className="text-center py-10 text-slate-400 text-sm">No participants found.</td></tr>
             ) : (
               students.map((s) => {
                 const summary = summaries[s.roll_number];
@@ -232,8 +218,14 @@ export function StudentsPage({ staff, courseName }: Props) {
                   <tr key={s.id} onClick={() => setViewing(s)} className="cursor-pointer">
                     <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} /></td>
                     <td className="font-mono font-medium">{s.roll_number}</td>
-                    <td>{s.name}</td>
-                    <td className="text-slate-500 dark:text-slate-400 text-xs">{[s.department, s.program].filter(Boolean).join(' · ') || '—'}</td>
+                    <td className="font-medium">{s.name}</td>
+                    <td>
+                      <span className={s.role_type === 'faculty' ? 'badge-blue' : 'badge-slate'}>
+                        {s.role_type === 'faculty' ? 'Faculty / Staff' : 'Student'}
+                      </span>
+                    </td>
+                    <td className="text-slate-500 dark:text-slate-400 text-xs">{s.department || '—'}</td>
+                    <td className="text-slate-500 dark:text-slate-400 text-xs">{s.program || '—'}</td>
                     <td>{s.group_label ? <span className="badge-blue">{s.group_label}</span> : <span className="text-slate-300 dark:text-slate-600 text-xs">Unassigned</span>}</td>
                     <td>
                       {summary ? (
@@ -301,19 +293,18 @@ function StudentDetailModal({
     <Modal open={open} onClose={onClose} title={student.name} subtitle={`${student.roll_number} · ${courseName}`} size="sm">
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-3">
+          <span className={student.role_type === 'faculty' ? 'badge-blue' : 'badge-slate'}>
+            {student.role_type === 'faculty' ? 'Faculty / Staff' : 'Student'}
+          </span>
           {student.group_label ? <span className="badge-blue">Group {student.group_label}</span> : <span className="badge-slate">Unassigned group</span>}
           <span className="badge-slate">{student.status}</span>
           {summary && <span className={`font-semibold text-sm ${pctColor(summary.attendance_percentage)}`}>{summary.attendance_percentage}% attendance</span>}
         </div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-          <DetailField label="Roll Number" value={student.roll_number} />
+          <DetailField label={student.role_type === 'faculty' ? 'Employee ID' : 'Roll Number'} value={student.roll_number} />
           <DetailField label="Name" value={student.name} />
-          <DetailField label="Email" value={student.email} />
-          <DetailField label="Phone" value={student.phone} />
-          <DetailField label="Department" value={student.department} />
-          <DetailField label="Program" value={student.program} />
-          <DetailField label="Semester" value={student.semester} />
-          <DetailField label="Batch" value={student.batch} />
+          <DetailField label="School / Centre" value={student.department} />
+          {student.role_type !== 'faculty' && <DetailField label="Program" value={student.program} />}
           <DetailField label="Group" value={student.group_label} />
           <DetailField label="Status" value={student.status} />
         </div>
@@ -359,9 +350,12 @@ function StudentFormModal({
   useEffect(() => {
     if (student) {
       setForm({
-        roll_number: student.roll_number, name: student.name, email: student.email ?? '', phone: student.phone ?? '',
-        department: student.department ?? '', program: student.program ?? '', semester: student.semester ?? '',
-        group_label: student.group_label ?? '', batch: student.batch ?? '',
+        roll_number: student.roll_number,
+        name: student.name,
+        role_type: student.role_type ?? 'student',
+        department: student.department ?? '',
+        program: student.program ?? '',
+        group_label: student.group_label ?? '',
       });
     } else {
       setForm(emptyForm);
@@ -370,19 +364,19 @@ function StudentFormModal({
   }, [student, open]);
 
   async function handleSave() {
-    if (!form.roll_number.trim() || !form.name.trim()) { setError('Roll number and name are required.'); return; }
+    if (!form.roll_number.trim() || !form.name.trim()) {
+      setError(form.role_type === 'faculty' ? 'Employee ID and Name are required.' : 'Roll Number and Name are required.');
+      return;
+    }
     setLoading(true);
     setError('');
     const payload = {
-      ...form,
       roll_number: form.roll_number.trim().toUpperCase(),
-      email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
+      name: form.name.trim(),
+      role_type: form.role_type,
       department: form.department.trim() || null,
-      program: form.program.trim() || null,
-      semester: form.semester.trim() || null,
+      program: form.role_type === 'student' ? (form.program.trim() || null) : null,
       group_label: form.group_label.trim().toUpperCase() || null,
-      batch: form.batch.trim() || null,
     };
 
     const { error: dbErr } = student
@@ -391,25 +385,45 @@ function StudentFormModal({
 
     setLoading(false);
     if (dbErr) {
-      setError(dbErr.code === '23505' ? 'This roll number is already registered.' : 'Could not save. Please try again.');
+      setError(dbErr.code === '23505' ? 'This ID / Roll number is already registered.' : 'Could not save. Please try again.');
       return;
     }
-    toast('success', student ? 'Student updated.' : 'Student added.');
+    toast('success', student ? 'Entry updated.' : 'Entry added.');
     onSaved();
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={student ? 'Edit Student' : 'Add Student'} size="md">
+    <Modal open={open} onClose={onClose} title={student ? 'Edit Participant' : 'Add Participant'} size="md">
+      <div className="flex bg-slate-200 dark:bg-[#161b22] p-1 rounded-xl mb-4">
+        <button
+          type="button"
+          onClick={() => setForm((f) => ({ ...f, role_type: 'student' }))}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors ${form.role_type === 'student' ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400'}`}
+        >
+          🎓 Student
+        </button>
+        <button
+          type="button"
+          onClick={() => setForm((f) => ({ ...f, role_type: 'faculty' }))}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors ${form.role_type === 'faculty' ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400'}`}
+        >
+          🏛️ Faculty / Staff
+        </button>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Roll Number *" value={form.roll_number} onChange={(v) => setForm((f) => ({ ...f, roll_number: v }))} disabled={!!student} />
+        <Field
+          label={form.role_type === 'faculty' ? 'Employee ID *' : 'Roll Number *'}
+          value={form.roll_number}
+          onChange={(v) => setForm((f) => ({ ...f, roll_number: v }))}
+          disabled={!!student}
+        />
         <Field label="Full Name *" value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} />
-        <Field label="Email" value={form.email} onChange={(v) => setForm((f) => ({ ...f, email: v }))} />
-        <Field label="Phone" value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
-        <Field label="Department" value={form.department} onChange={(v) => setForm((f) => ({ ...f, department: v }))} />
-        <Field label="Program" value={form.program} onChange={(v) => setForm((f) => ({ ...f, program: v }))} />
-        <Field label="Semester" value={form.semester} onChange={(v) => setForm((f) => ({ ...f, semester: v }))} />
+        <Field label="School / Centre" value={form.department} onChange={(v) => setForm((f) => ({ ...f, department: v }))} />
+        {form.role_type === 'student' && (
+          <Field label="Program (e.g. B.Tech, M.Tech)" value={form.program} onChange={(v) => setForm((f) => ({ ...f, program: v }))} />
+        )}
         <Field label="Group (e.g. B)" value={form.group_label} onChange={(v) => setForm((f) => ({ ...f, group_label: v }))} />
-        <Field label="Batch" value={form.batch} onChange={(v) => setForm((f) => ({ ...f, batch: v }))} />
       </div>
       {error && <div className="mt-3 px-4 py-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl text-red-700 dark:text-red-400 text-xs">{error}</div>}
       <button onClick={handleSave} disabled={loading} className="btn-primary w-full h-11 mt-5">{loading ? 'Saving…' : 'Save'}</button>
@@ -426,7 +440,7 @@ function Field({ label, value, onChange, disabled }: { label: string; value: str
   );
 }
 
-interface ParsedRow { roll_number: string; name: string; email?: string; phone?: string; department?: string; program?: string; semester?: string; group_label?: string; batch?: string; error?: string; }
+interface ParsedRow { roll_number: string; name: string; role_type?: ParticipantType; department?: string; program?: string; group_label?: string; error?: string; }
 
 function parseCsv(text: string): ParsedRow[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
@@ -442,18 +456,16 @@ function parseCsv(text: string): ParsedRow[] {
 
   return lines.slice(1).map((line) => {
     const cells = splitLine(line);
+    const roleVal = cells[col('role_type')] || cells[col('type')];
     const row: ParsedRow = {
       roll_number: (cells[rollIdx] || '').toUpperCase(),
       name: cells[nameIdx] || '',
-      email: cells[col('email')] || undefined,
-      phone: cells[col('phone')] || undefined,
-      department: cells[col('department')] || undefined,
+      role_type: roleVal?.toLowerCase().includes('fac') ? 'faculty' : 'student',
+      department: cells[col('department')] || cells[col('school')] || undefined,
       program: cells[col('program')] || undefined,
-      semester: cells[col('semester')] || undefined,
       group_label: groupIdx !== -1 ? (cells[groupIdx] || undefined)?.toUpperCase() : undefined,
-      batch: cells[col('batch')] || undefined,
     };
-    if (!row.roll_number || !row.name) row.error = 'Missing roll number or name';
+    if (!row.roll_number || !row.name) row.error = 'Missing Roll/Emp ID or name';
     return row;
   });
 }
@@ -478,21 +490,21 @@ function ImportModal({ open, onClose, staff, onImported }: { open: boolean; onCl
     setError('');
     const { error: dbErr } = await supabase.from('students').upsert(
       valid.map((r) => ({
-        roll_number: r.roll_number, name: r.name, email: r.email || null, phone: r.phone || null,
-        department: r.department || null, program: r.program || null, semester: r.semester || null,
-        group_label: r.group_label || null, batch: r.batch || null, created_by: staff.id,
+        roll_number: r.roll_number, name: r.name, role_type: r.role_type ?? 'student',
+        department: r.department || null, program: r.program || null,
+        group_label: r.group_label || null, created_by: staff.id,
       })),
       { onConflict: 'roll_number', ignoreDuplicates: true },
     );
     setLoading(false);
     if (dbErr) { setError('Import failed: ' + dbErr.message); return; }
-    toast('success', `Imported ${valid.length} students.`);
+    toast('success', `Imported ${valid.length} participants.`);
     setRows([]);
     onImported();
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Import Students" subtitle="CSV with columns: roll_number, name, email, phone, department, program, semester, group, batch" size="lg">
+    <Modal open={open} onClose={onClose} title="Import Participants" subtitle="CSV with columns: roll_number, name, role_type, department, program, group" size="lg">
       <input type="file" accept=".csv" onChange={handleFile} className="text-sm" />
       {rows.length > 0 && (
         <div className="mt-4">
@@ -501,13 +513,14 @@ function ImportModal({ open, onClose, staff, onImported }: { open: boolean; onCl
           </p>
           <div className="max-h-64 overflow-y-auto border border-slate-100 dark:border-[#21262d] rounded-xl">
             <table className="data-table">
-              <thead><tr><th>Roll</th><th>Name</th><th>Group</th><th>Status</th></tr></thead>
+              <thead><tr><th>Roll / Emp ID</th><th>Name</th><th>Role</th><th>School / Centre</th><th>Status</th></tr></thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i}>
                     <td className="font-mono">{r.roll_number || '—'}</td>
                     <td>{r.name || '—'}</td>
-                    <td>{r.group_label || '—'}</td>
+                    <td>{r.role_type === 'faculty' ? 'Faculty / Staff' : 'Student'}</td>
+                    <td>{r.department || '—'}</td>
                     <td>{r.error ? <span className="badge-red">{r.error}</span> : <span className="badge-green">Ready</span>}</td>
                   </tr>
                 ))}
@@ -518,7 +531,7 @@ function ImportModal({ open, onClose, staff, onImported }: { open: boolean; onCl
       )}
       {error && <div className="mt-3 px-4 py-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl text-red-700 dark:text-red-400 text-xs">{error}</div>}
       <button onClick={handleImport} disabled={loading || rows.length === 0} className="btn-primary w-full h-11 mt-5">
-        {loading ? 'Importing…' : `Import ${rows.filter((r) => !r.error).length || ''} Students`}
+        {loading ? 'Importing…' : `Import ${rows.filter((r) => !r.error).length || ''} Participants`}
       </button>
     </Modal>
   );

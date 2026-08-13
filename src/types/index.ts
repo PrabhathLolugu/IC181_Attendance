@@ -12,18 +12,16 @@ export interface Staff {
 }
 
 export type StudentStatus = 'active' | 'inactive' | 'graduated' | 'deleted';
+export type ParticipantType = 'student' | 'faculty';
 
 export interface Student {
   id: string;
   roll_number: string;
   name: string;
-  email?: string | null;
-  phone?: string | null;
-  department?: string | null;
-  program?: string | null;
-  semester?: string | null;
+  role_type?: ParticipantType | null;
+  department?: string | null; // Maps to "School / Centre"
+  program?: string | null;    // Maps to "Program" (e.g. B.Tech, M.Tech, Ph.D.)
   group_label?: string | null;
-  batch?: string | null;
   photo_url?: string | null;
   status: StudentStatus;
   created_at: string;
@@ -123,6 +121,9 @@ export interface StudentAttendanceSummary {
   student_id: string;
   roll_number: string;
   name: string;
+  role_type?: ParticipantType | null;
+  department?: string | null;
+  program?: string | null;
   group_label?: string | null;
   present_count: number;
   excused_count: number;
@@ -137,4 +138,3 @@ export interface ActivityRound {
   name: string;
   created_at: string;
 }
-

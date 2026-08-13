@@ -36,7 +36,7 @@ Deno.serve(async (req: Request) => {
 
     const { data, error } = await db
       .from("students")
-      .select("id, roll_number, name, email, phone, department, program, semester, group_label, batch, photo_url, status")
+      .select("id, roll_number, name, role_type, department, program, group_label, photo_url, status")
       .eq("roll_number", roll)
       .maybeSingle();
 

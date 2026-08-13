@@ -10,12 +10,11 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const roll = String(body.rollNumber ?? "").trim().toUpperCase();
     const name = String(body.name ?? "").trim();
-    if (!roll || !name) return withCors({ error: "Roll number and name are required." }, 400);
+    if (!roll || !name) return withCors({ error: "ID / Roll number and name are required." }, 400);
 
-    const email = body.email ? String(body.email).trim() : null;
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return withCors({ error: "Please enter a valid email address." }, 400);
-    }
+    const roleType = body.roleType === 'faculty' ? 'faculty' : 'student';
+    const department = body.department ? String(body.department).trim() : null; // School / Centre
+    const program = body.program ? String(body.program).trim() : null;       // Program (e.g. B.Tech, M.Tech, Ph.D.)
 
     const db = serviceClient();
     const { data, error } = await db
@@ -23,12 +22,9 @@ Deno.serve(async (req: Request) => {
       .insert({
         roll_number: roll,
         name,
-        email,
-        phone: body.phone ? String(body.phone).trim() : null,
-        department: body.department ? String(body.department).trim() : null,
-        program: body.program ? String(body.program).trim() : null,
-        semester: body.semester ? String(body.semester).trim() : null,
-        batch: body.batch ? String(body.batch).trim() : null,
+        role_type: roleType,
+        department,
+        program,
       })
       .select()
       .single();
@@ -36,7 +32,7 @@ Deno.serve(async (req: Request) => {
     if (error) {
       if (error.code === "23505") {
         return withCors(
-          { error: "This roll number is already registered. Continue to attendance instead.", code: "already_registered" },
+          { error: "This ID / Roll number is already registered.", code: "already_registered" },
           409,
         );
       }
@@ -44,8 +40,8 @@ Deno.serve(async (req: Request) => {
     }
 
     await logAudit({
-      actorLabel: `student:${roll}`,
-      action: "student_registered",
+      actorLabel: `${roleType}:${roll}`,
+      action: "participant_registered",
       entityType: "student",
       entityId: data.id,
       after: data,
