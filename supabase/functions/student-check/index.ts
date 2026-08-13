@@ -9,7 +9,6 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json();
     const roll = String(body.rollNumber ?? "").trim().toUpperCase();
-    if (!roll) return withCors({ error: "Roll number is required." }, 400);
 
     const db = serviceClient();
 
@@ -25,13 +24,15 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
 
         if (deviceRecord) {
-          if (deviceRecord.roll_number !== roll) {
+          if (roll && deviceRecord.roll_number !== roll) {
             return withCors({ deviceBlocked: true, blockedRoll: deviceRecord.roll_number });
           }
-          return withCors({ alreadyMarked: true, markedAt: deviceRecord.marked_at, rollNumber: roll });
+          return withCors({ alreadyMarked: true, markedAt: deviceRecord.marked_at, rollNumber: deviceRecord.roll_number });
         }
       }
     }
+
+    if (!roll) return withCors({ error: "Roll number is required." }, 400);
 
     const { data, error } = await db
       .from("students")

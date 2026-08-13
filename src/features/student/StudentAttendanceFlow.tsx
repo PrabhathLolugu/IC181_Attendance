@@ -68,6 +68,42 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
   const rollRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    const savedRoll = localStorage.getItem('sa_student_roll');
+    if (savedRoll && !roll) setRoll(savedRoll);
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    async function checkDeviceOnLoad() {
+      try {
+        const deviceFingerprint = await getDeviceFingerprint();
+        const res = await callFunction<{
+          alreadyMarked?: boolean;
+          markedAt?: string;
+          rollNumber?: string;
+          deviceBlocked?: boolean;
+          blockedRoll?: string;
+        }>('student-check', { qrToken: token, deviceFingerprint });
+
+        if (res.deviceBlocked) {
+          setDeviceBlockedRoll(res.blockedRoll ?? null);
+          setStep('device_blocked');
+        } else if (res.alreadyMarked) {
+          if (res.rollNumber) {
+            setRoll(res.rollNumber);
+            localStorage.setItem('sa_student_roll', res.rollNumber);
+          }
+          setDuplicateInfo({ markedAt: res.markedAt, status: 'present' });
+          setStep('duplicate');
+        }
+      } catch {
+        /* fallback to normal step flow */
+      }
+    }
+    checkDeviceOnLoad();
+  }, [token]);
+
+  useEffect(() => {
     if (step === 'roll') rollRef.current?.focus();
   }, [step]);
 
