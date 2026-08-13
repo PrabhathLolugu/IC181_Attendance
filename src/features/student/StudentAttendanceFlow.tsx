@@ -122,8 +122,27 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
     setRollLoading(true);
     setError('');
     try {
-      const res = await callFunction<{ exists: boolean; student?: Student }>('student-check', { rollNumber: cleaned });
-      if (res.exists && res.student) {
+      const deviceFingerprint = await getDeviceFingerprint();
+      const res = await callFunction<{
+        exists: boolean;
+        student?: Student;
+        alreadyMarked?: boolean;
+        markedAt?: string;
+        deviceBlocked?: boolean;
+        blockedRoll?: string;
+      }>('student-check', {
+        rollNumber: cleaned,
+        qrToken: token,
+        deviceFingerprint,
+      });
+
+      if (res.deviceBlocked) {
+        setDeviceBlockedRoll(res.blockedRoll ?? null);
+        setStep('device_blocked');
+      } else if (res.alreadyMarked) {
+        setDuplicateInfo({ markedAt: res.markedAt, status: 'present' });
+        setStep('duplicate');
+      } else if (res.exists && res.student) {
         setStudent(res.student);
         setEnrollForm({
           name: res.student.name,
