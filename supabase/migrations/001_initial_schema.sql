@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
   gps_accuracy DOUBLE PRECISION,
   marked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   recorded_by UUID REFERENCES public.staff(id) ON DELETE SET NULL,
+  device_fingerprint TEXT,
   notes TEXT,
   UNIQUE(session_id, student_id)
 );
@@ -169,7 +170,8 @@ CREATE TABLE IF NOT EXISTS public.gps_override_requests (
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   resolved_at TIMESTAMPTZ,
-  resolved_by UUID REFERENCES public.staff(id) ON DELETE SET NULL
+  resolved_by UUID REFERENCES public.staff(id) ON DELETE SET NULL,
+  device_fingerprint TEXT
 );
 
 -- 10. Override Codes
