@@ -31,10 +31,10 @@ export function LiveSessionPage({ staff, courseName }: Props) {
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   const loadSessions = useCallback(async () => {
-    const { data } = await supabase.from('sessions').select('*').eq('status', 'active').eq('course_name', courseName).order('created_at', { ascending: false });
+    const { data } = await supabase.from('sessions').select('*').eq('status', 'active').order('created_at', { ascending: false });
     setSessions(data ?? []);
     setSelectedId((prev) => (prev && data?.some((s) => s.id === prev) ? prev : data?.[0]?.id ?? null));
-  }, [courseName]);
+  }, []);
 
   const handleSessionStarted = useCallback((newSession?: Session, token?: string) => {
     if (newSession) {

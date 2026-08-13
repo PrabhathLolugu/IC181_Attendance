@@ -110,7 +110,10 @@ Deno.serve(async (req: Request) => {
     }
 
     const distance = haversineMeters(lat, lng, session.anchor_lat, session.anchor_lng);
-    const withinRadius = distance <= (session.radius_meters || 100);
+    const accuracy = Number.isFinite(Number(body.accuracy)) ? Number(body.accuracy) : 0;
+    // Account for mobile GPS accuracy variance (up to 60m indoor margin of error)
+    const effectiveDistance = Math.max(0, distance - Math.min(accuracy, 60));
+    const withinRadius = effectiveDistance <= (session.radius_meters || 150);
 
     if (!withinRadius) {
       if (!session.allow_gps_override) {
