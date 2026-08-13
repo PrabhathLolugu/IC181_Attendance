@@ -156,7 +156,7 @@ export function DashboardPage({ staff, onNavigate, onOpenSession, courseName }: 
           <button onClick={() => onNavigate('live_session')} className="btn-primary btn-sm">
             {activeSessions.length > 0 ? `${activeSessions.length} Live Now` : 'Start Attendance'}
           </button>
-          <button onClick={() => onNavigate('students')} className="btn-secondary btn-sm">Students</button>
+          <button onClick={() => onNavigate('students')} className="btn-secondary btn-sm">Participants</button>
           <button onClick={() => onNavigate('reports')} className="btn-secondary btn-sm">Reports</button>
         </div>
       </div>
@@ -164,7 +164,7 @@ export function DashboardPage({ staff, onNavigate, onOpenSession, courseName }: 
       <div>
         <p className="section-title mb-3">Overall Stats — {courseName}</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <StatCard label="Total Students" value={totalStudents} color="text-slate-900 dark:text-slate-100" />
+          <StatCard label="Total Participants" value={totalStudents} color="text-slate-900 dark:text-slate-100" />
           <StatCard label="Sessions Held" value={sessionsHeldCount} color="text-slate-900 dark:text-slate-100" />
           <StatCard label="Overall Attendance %" value={`${overallPct}%`} color="text-emerald-600" />
           <StatCard label="Excused" value={excusedTotal} color="text-amber-600" />
@@ -212,7 +212,7 @@ export function DashboardPage({ staff, onNavigate, onOpenSession, courseName }: 
 
         <ChartCard title="Attendance by Group" subtitle="Average % per assigned group">
           {groupChart.length === 0 ? (
-            <EmptyChart text="No students have been assigned a group yet." />
+            <EmptyChart text="No participants have been assigned a group yet." />
           ) : (
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={groupChart} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
@@ -231,7 +231,7 @@ export function DashboardPage({ staff, onNavigate, onOpenSession, courseName }: 
           )}
         </ChartCard>
 
-        <ChartCard title="Roster by Department" subtitle="Active students, all courses">
+        <ChartCard title="Roster by School / Centre" subtitle="Active participants, all courses">
           {deptChart.length === 0 ? (
             <EmptyChart text="No students enrolled yet." />
           ) : (
