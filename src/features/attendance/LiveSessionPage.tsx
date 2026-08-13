@@ -83,12 +83,21 @@ export function LiveSessionPage({ staff, courseName, onCourseChange }: Props) {
   useEffect(() => {
     if (!selectedId) { setRecords([]); setOverrides([]); return; }
     loadSessionDetail(selectedId);
+
     const channel = supabase
       .channel(`live_session_${selectedId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records', filter: `session_id=eq.${selectedId}` }, () => loadSessionDetail(selectedId))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gps_override_requests', filter: `session_id=eq.${selectedId}` }, () => loadSessionDetail(selectedId))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, () => loadSessionDetail(selectedId))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gps_override_requests' }, () => loadSessionDetail(selectedId))
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    const pollInterval = setInterval(() => {
+      loadSessionDetail(selectedId);
+    }, 3000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
+    };
   }, [selectedId, loadSessionDetail]);
 
   useEffect(() => {
