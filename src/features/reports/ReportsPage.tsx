@@ -76,15 +76,17 @@ export function ReportsPage({ staff, courseName, focusSessionId, onFocusHandled 
     setLoading(true);
     const [{ data: summaryRows }, { data: sessionRows }, { data: studentRows }] = await Promise.all([
       supabase.rpc('student_attendance_summary', { p_course_name: courseName }),
-      supabase.from('sessions').select('*').eq('course_name', courseName).order('session_date', { ascending: false }).order('created_at', { ascending: false }).limit(500),
+      supabase.from('sessions').select('*, attendance_records(count)').eq('course_name', courseName).order('session_date', { ascending: false }).order('created_at', { ascending: false }).limit(500),
       supabase.from('students').select('*').eq('status', 'active').order('roll_number'),
     ]);
 
     if (sessionRows?.length) {
-      const { data: records } = await supabase.from('attendance_records').select('session_id').in('session_id', sessionRows.map((s) => s.id));
-      const counts: Record<string, number> = {};
-      (records ?? []).forEach((r) => { counts[r.session_id] = (counts[r.session_id] ?? 0) + 1; });
-      setSessions(sessionRows.map((s) => ({ ...s, presentCount: counts[s.id] ?? 0 })));
+      setSessions(sessionRows.map((s) => {
+        // Supabase returns related counts as an array with a single object: [{ count: number }]
+        const countData = s.attendance_records as unknown as [{ count: number }] | undefined;
+        const presentCount = countData?.[0]?.count ?? 0;
+        return { ...s, presentCount };
+      }));
     } else {
       setSessions([]);
     }
@@ -661,7 +663,7 @@ function DayAttendanceView({ date, students, courseName }: { date: string; stude
       if (cancelled) return;
       setSessions(sess ?? []);
       if (sess?.length) {
-        const { data: recs } = await supabase.from('attendance_records').select('*').in('session_id', sess.map((s) => s.id));
+        const { data: recs } = await supabase.from('attendance_records').select('*').in('session_id', sess.map((s) => s.id)).limit(10000);
         if (!cancelled) setRecords(recs ?? []);
       } else {
         setRecords([]);

@@ -10,6 +10,8 @@ import { ReportsPage } from './features/reports/ReportsPage';
 import { AdminPage } from './features/admin/AdminPage';
 import { AuditPage } from './features/admin/AuditPage';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { JoinGroupQRPage } from './features/groups/JoinGroupQRPage';
+import { StudentJoinGroupFlow } from './features/student/StudentJoinGroupFlow';
 import { TopBar } from './components/layout/TopBar';
 import { Sidebar } from './components/layout/Sidebar';
 import { ToastProvider } from './components/ui/Toast';
@@ -19,11 +21,13 @@ const MOBILE_NAV = [
   { id: 'live_session', label: 'Live', icon: '●' },
   { id: 'students', label: 'Participants', icon: '👥' },
   { id: 'reports', label: 'Reports', icon: '📊' },
+  { id: 'groups', label: 'Join Group', icon: '🔗' },
 ];
 
 export default function App() {
   const { loading, staff, session } = useAuth();
   const [studentMode, setStudentMode] = useState(false);
+  const [joinGroupMode, setJoinGroupMode] = useState(false);
   const [attendToken, setAttendToken] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [defaultCourseName, setDefaultCourseName] = useState('General Class');
@@ -51,10 +55,14 @@ export default function App() {
   }, [defaultCourseName]);
 
   useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get('attend');
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('attend');
     if (token) {
       setAttendToken(token);
       setStudentMode(true);
+    }
+    if (params.get('join_group') === '1') {
+      setJoinGroupMode(true);
     }
   }, []);
 
@@ -95,6 +103,15 @@ export default function App() {
     );
   }
 
+  if (joinGroupMode) {
+    return (
+      <>
+        <StudentJoinGroupFlow onBack={() => setJoinGroupMode(false)} />
+        <ToastProvider />
+      </>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-[#0d1117]">
@@ -107,9 +124,12 @@ export default function App() {
     return (
       <>
         <LoginPage onLoggedIn={() => setActiveTab('dashboard')} />
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
-          <button onClick={() => setStudentMode(true)} className="btn-outline btn-sm shadow-lg bg-white dark:bg-[#161b22] text-xs">
-            📱 Mark Attendance (Student / Faculty)
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 flex-wrap justify-center px-4 max-w-full">
+          <button onClick={() => setStudentMode(true)} className="btn-outline btn-sm shadow-lg bg-white dark:bg-[#161b22] text-xs whitespace-nowrap">
+            📱 Mark Attendance
+          </button>
+          <button onClick={() => setJoinGroupMode(true)} className="btn-outline btn-sm shadow-lg bg-white dark:bg-[#161b22] text-xs whitespace-nowrap">
+            🔗 Join Group
           </button>
         </div>
         <ToastProvider />
@@ -151,6 +171,7 @@ export default function App() {
       case 'admin': return <AdminPage staff={staff} />;
       case 'audit': return <AuditPage />;
       case 'settings': return <SettingsPage />;
+      case 'groups': return <JoinGroupQRPage />;
       default: return <DashboardPage staff={staff} onNavigate={setActiveTab} onOpenSession={openSession} courseName={currentCourse} />;
     }
   };

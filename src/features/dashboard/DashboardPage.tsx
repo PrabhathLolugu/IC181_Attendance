@@ -62,7 +62,7 @@ export function DashboardPage({ staff, onNavigate, onOpenSession, courseName }: 
 
     const allIds = allSessions.map((s) => s.id);
     if (allIds.length > 0) {
-      const { data: records } = await supabase.from('attendance_records').select('session_id, status, method').in('session_id', allIds);
+      const { data: records } = await supabase.from('attendance_records').select('session_id, status, method').in('session_id', allIds).limit(20000);
       const todayIds = new Set((sessions ?? []).map((s) => s.id));
       setTodayRecords((records ?? []).filter((r) => todayIds.has(r.session_id)));
 

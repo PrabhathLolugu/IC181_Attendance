@@ -33,7 +33,7 @@ Deno.serve(async (req: Request) => {
     const { data: sessions } = await sessionQuery;
 
     const { data: records } = sessions?.length
-      ? await db.from("attendance_records").select("session_id, roll_number, status").in("session_id", sessions.map((s) => s.id))
+      ? await db.from("attendance_records").select("session_id, roll_number, status").in("session_id", sessions.map((s) => s.id)).limit(20000)
       : { data: [] };
 
     const byStudentSession = new Map<string, string>();
