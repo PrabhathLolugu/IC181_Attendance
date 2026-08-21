@@ -36,7 +36,7 @@ Deno.serve(async (req: Request) => {
     if (!roundId && newRoundName) {
       const { data: round, error: roundErr } = await db
         .from("activity_rounds")
-        .insert({ name: newRoundName, created_by: auth.staff.id })
+        .insert({ name: newRoundName, course_name: courseName })
         .select()
         .single();
       if (roundErr || !round) return withCors({ error: "Could not create the round." }, 500);
