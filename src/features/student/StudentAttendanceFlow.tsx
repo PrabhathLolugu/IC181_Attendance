@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { getDeviceFingerprint } from '../../lib/deviceFingerprint';
 import { callFunction } from '../../lib/api';
 import { CameraScanner } from '../../components/shared/CameraScanner';
 import type { Student, Session, AttendanceRecord, ParticipantType } from '../../types';
@@ -93,37 +92,6 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!token) return;
-    async function checkDeviceOnLoad() {
-      try {
-        const deviceFingerprint = await getDeviceFingerprint();
-        const res = await callFunction<{
-          alreadyMarked?: boolean;
-          markedAt?: string;
-          rollNumber?: string;
-          deviceBlocked?: boolean;
-          blockedRoll?: string;
-        }>('student-check', { qrToken: token, deviceFingerprint });
-
-        if (res.deviceBlocked) {
-          setDeviceBlockedRoll(res.blockedRoll ?? null);
-          setStep('device_blocked');
-        } else if (res.alreadyMarked) {
-          if (res.rollNumber) {
-            setRoll(res.rollNumber);
-            localStorage.setItem('sa_student_roll', res.rollNumber);
-          }
-          setDuplicateInfo({ markedAt: res.markedAt, status: 'present' });
-          setStep('duplicate');
-        }
-      } catch {
-        /* fallback to normal step flow */
-      }
-    }
-    checkDeviceOnLoad();
-  }, [token]);
-
-  useEffect(() => {
     if (step === 'roll') rollRef.current?.focus();
   }, [step]);
 
@@ -181,24 +149,17 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
     setRollLoading(true);
     setError('');
     try {
-      const deviceFingerprint = await getDeviceFingerprint();
       const res = await callFunction<{
         exists: boolean;
         student?: Student;
         alreadyMarked?: boolean;
         markedAt?: string;
-        deviceBlocked?: boolean;
-        blockedRoll?: string;
       }>('student-check', {
         rollNumber: cleaned,
         qrToken: token,
-        deviceFingerprint,
       });
 
-      if (res.deviceBlocked) {
-        setDeviceBlockedRoll(res.blockedRoll ?? null);
-        setStep('device_blocked');
-      } else if (res.alreadyMarked) {
+      if (res.alreadyMarked) {
         setDuplicateInfo({ markedAt: res.markedAt, status: 'present' });
         setStep('duplicate');
       } else if (res.exists && res.student) {
@@ -260,7 +221,7 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
             return;
           }
         } catch {
-          /* fall through */
+          /* ignore */
         }
       }
       setError(message);
@@ -273,7 +234,6 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
     setStep('submitting');
     setError('');
     try {
-      const deviceFingerprint = await getDeviceFingerprint();
       const res = await callFunction<{
         record?: AttendanceRecord;
         session?: Session;
@@ -282,8 +242,6 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
         status?: string;
         overridePending?: boolean;
         reason?: string;
-        deviceBlocked?: boolean;
-        blockedRoll?: string;
       }>('attendance-submit', {
         qrToken: token,
         rollNumber: roll,
@@ -291,13 +249,9 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
         lng: position?.lng,
         accuracy: position?.accuracy,
         gpsDenied,
-        deviceFingerprint,
       });
 
-      if (res.deviceBlocked) {
-        setDeviceBlockedRoll(res.blockedRoll ?? null);
-        setStep('device_blocked');
-      } else if (res.duplicate) {
+      if (res.duplicate) {
         setDuplicateInfo({ markedAt: res.markedAt, status: res.status });
         setStep('duplicate');
       } else if (res.overridePending) {
@@ -328,22 +282,15 @@ export function StudentAttendanceFlow({ initialToken, onBack }: Props) {
     setRollLoading(true);
     setError('');
     try {
-      const deviceFingerprint = await getDeviceFingerprint();
       const res = await callFunction<{
         record?: AttendanceRecord;
         duplicate?: boolean;
-        deviceBlocked?: boolean;
-        blockedRoll?: string;
       }>('override-code-redeem', {
         qrToken: token,
         rollNumber: roll,
         code: overrideCode.trim(),
-        deviceFingerprint,
       });
-      if (res.deviceBlocked) {
-        setDeviceBlockedRoll(res.blockedRoll ?? null);
-        setStep('device_blocked');
-      } else if (res.duplicate) {
+      if (res.duplicate) {
         setStep('duplicate');
       } else if (res.record) {
         localStorage.setItem('sa_student_roll', roll);
