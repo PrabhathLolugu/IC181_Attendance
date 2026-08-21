@@ -5,7 +5,8 @@ import { logAudit } from "../_shared/audit.ts";
 // Must match MAX_CAPACITY in the Yoga group registration Apps Script — this
 // is a backstop against the Apps Script's own choice-list filtering, not the
 // primary enforcement (the form already hides a group once it's full).
-const MAX_CAPACITY = 45;
+// Capacity limit for groups
+const MAX_CAPACITY = 60;
 
 Deno.serve(async (req: Request) => {
   const preflight = handleOptions(req);
@@ -14,17 +15,15 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json();
     const roll = String(body.rollNumber ?? "").trim().toUpperCase();
-    const name = String(body.name ?? "").trim();
+    let name = String(body.name ?? "").trim();
     const rawGroup = String(body.group ?? "").trim();
-    if (!roll || !name || !rawGroup) {
-      return withCors({ error: "Roll number, name and group are required." }, 400);
+    if (!roll || !rawGroup) {
+      return withCors({ error: "Roll number and group are required." }, 400);
     }
 
-    // Form choices look like "Group A — Monday (7:00–8:00 AM) MORNING";
-    // pull out just the letter so it matches the group_label already used
-    // elsewhere in the system (e.g. staff bulk-assignment uses "A".."H").
-    const match = rawGroup.match(/^Group\s+([A-Za-z])\b/);
-    const code = (match ? match[1] : rawGroup.slice(0, 3)).toUpperCase();
+    // Support "A", "Group A", "Group A — Monday...", etc.
+    const match = rawGroup.match(/^(?:Group\s+)?([A-Za-z])\b/i);
+    const code = (match ? match[1] : rawGroup.slice(0, 1)).toUpperCase();
 
     const email = body.email ? String(body.email).trim() : null;
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -44,6 +43,13 @@ Deno.serve(async (req: Request) => {
       return withCors({ error: "This roll number is not active in the system. Please contact the instructor." }, 409);
     }
 
+    if (!name && existing?.name) {
+      name = existing.name;
+    }
+    if (!name) {
+      name = roll;
+    }
+
     if (!existing || existing.group_label !== code) {
       const { count, error: countErr } = await db
         .from("students")
@@ -52,7 +58,7 @@ Deno.serve(async (req: Request) => {
         .eq("status", "active");
       if (countErr) return withCors({ error: "Could not check group capacity. Please try again." }, 500);
       if ((count ?? 0) >= MAX_CAPACITY) {
-        return withCors({ error: `Group ${code} is already full. Please refresh the form and pick another group.` }, 409);
+        return withCors({ error: `Group ${code} is full (max ${MAX_CAPACITY} students). Please choose another group.` }, 409);
       }
     }
 

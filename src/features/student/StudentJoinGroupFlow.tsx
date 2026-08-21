@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../../services/supabase';
+import { callFunction } from '../../lib/api';
 import { GROUP_LINKS, FALLBACK_JOIN_FORM_LINK } from '../../lib/groupLinks';
 import { toast } from '../../components/ui/Toast';
 import type { Student } from '../../types';
@@ -8,11 +9,18 @@ interface Props {
   onBack?: () => void;
 }
 
+const AVAILABLE_GROUPS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
+
 export function StudentJoinGroupFlow({ onBack }: Props) {
   const [rollNumber, setRollNumber] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<'idle' | 'found' | 'not-found'>('idle');
+  const [submitting, setSubmitting] = useState(false);
+  const [step, setStep] = useState<'search' | 'found' | 'choose_group' | 'register_new'>('search');
   const [student, setStudent] = useState<Student | null>(null);
+
+  // Form states for unassigned / new registration
+  const [newName, setNewName] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState<string>('A');
 
   // Normalize group label (e.g. "Group A", "group a", "a" -> "A")
   const getNormalizedGroup = (groupLabel?: string | null): string => {
@@ -20,13 +28,12 @@ export function StudentJoinGroupFlow({ onBack }: Props) {
     return groupLabel.trim().replace(/^group\s*/i, '').toUpperCase();
   };
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    const finalRoll = rollNumber.trim();
+    const finalRoll = rollNumber.trim().toUpperCase();
     if (!finalRoll) return;
 
     setLoading(true);
-    setResult('idle');
     try {
       const { data, error } = await supabase
         .from('students')
@@ -38,16 +45,70 @@ export function StudentJoinGroupFlow({ onBack }: Props) {
       if (error) throw error;
 
       if (!data) {
-        setResult('not-found');
+        // Not found -> Show in-app registration form
+        setStep('register_new');
+        setNewName('');
+        setSelectedGroup('A');
       } else {
         setStudent(data);
-        setResult('found');
+        const norm = getNormalizedGroup(data.group_label);
+        if (norm && GROUP_LINKS[norm]) {
+          // Already has an assigned valid group -> Show group join card
+          setStep('found');
+        } else {
+          // Student exists but has no group -> Show group picker form
+          setStep('choose_group');
+          setNewName(data.name);
+          setSelectedGroup('A');
+        }
       }
     } catch (err) {
-      toast('error', err instanceof Error ? err.message : 'An error occurred.');
+      toast('error', err instanceof Error ? err.message : 'Lookup failed. Please try again.');
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleGroupSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const finalRoll = rollNumber.trim().toUpperCase();
+    if (!finalRoll) {
+      toast('error', 'Please enter your Roll Number.');
+      return;
+    }
+    if (!selectedGroup) {
+      toast('error', 'Please select a group.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await callFunction<{ student?: Student; group?: string; error?: string }>('group-register', {
+        rollNumber: finalRoll,
+        name: newName.trim() || student?.name || finalRoll,
+        group: selectedGroup,
+      });
+
+      if (res.student) {
+        setStudent(res.student);
+        setStep('found');
+        toast('success', `Assigned to Group ${res.group || selectedGroup}!`);
+      } else {
+        throw new Error('Registration failed.');
+      }
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Could not assign group.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function resetToSearch() {
+    setStep('search');
+    setRollNumber('');
+    setStudent(null);
+    setNewName('');
+    setSelectedGroup('A');
   }
 
   const assignedGroup = getNormalizedGroup(student?.group_label);
@@ -71,7 +132,10 @@ export function StudentJoinGroupFlow({ onBack }: Props) {
           </div>
         </div>
         {onBack && (
-          <button onClick={onBack} className="text-xs font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#30363d]">
+          <button
+            onClick={onBack}
+            className="text-xs font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#30363d] transition-colors"
+          >
             Close
           </button>
         )}
@@ -80,8 +144,9 @@ export function StudentJoinGroupFlow({ onBack }: Props) {
       <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6">
         <div className="w-full max-w-md bg-white dark:bg-[#161b22] rounded-3xl shadow-xl border border-slate-200/80 dark:border-[#30363d] p-6 sm:p-8">
           
-          {result === 'idle' && (
-            <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          {/* STEP 1: Search Roll Number */}
+          {step === 'search' && (
+            <form onSubmit={handleSearch} className="flex flex-col gap-6">
               <div className="text-center">
                 <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto mb-3">
                   <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -90,7 +155,7 @@ export function StudentJoinGroupFlow({ onBack }: Props) {
                   </svg>
                 </div>
                 <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Find Your Group</h2>
-                <p className="text-slate-500 text-xs sm:text-sm mt-1">Enter your Roll Number to find your group and join the chat.</p>
+                <p className="text-slate-500 text-xs sm:text-sm mt-1">Enter your Roll Number to discover your group and join the chat.</p>
               </div>
 
               <div>
@@ -118,7 +183,8 @@ export function StudentJoinGroupFlow({ onBack }: Props) {
             </form>
           )}
 
-          {result === 'found' && student && (
+          {/* STEP 2: Found with Group */}
+          {step === 'found' && student && (
             <div className="flex flex-col gap-5 text-center animate-in fade-in duration-300">
               <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto">
                 <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -136,7 +202,7 @@ export function StudentJoinGroupFlow({ onBack }: Props) {
               {groupLink ? (
                 <div className="bg-slate-50 dark:bg-[#0d1117] border border-slate-200 dark:border-[#30363d] rounded-2xl p-5 sm:p-6 text-center">
                   <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-2">You are assigned to</p>
-                  <div className="inline-flex items-center justify-center px-4 py-2 rounded-2xl bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-2xl sm:text-3xl font-black mb-5">
+                  <div className="inline-flex items-center justify-center px-5 py-2 rounded-2xl bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-3xl font-black mb-5">
                     Group {assignedGroup}
                   </div>
                   
@@ -156,77 +222,174 @@ export function StudentJoinGroupFlow({ onBack }: Props) {
                 </div>
               ) : (
                 <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-2xl p-5 sm:p-6 text-center">
-                  <div className="w-10 h-10 bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="8" x2="12" y2="12"></line>
-                      <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                    </svg>
-                  </div>
-                  <p className="text-amber-800 dark:text-amber-300 font-bold text-sm">No Group Assigned</p>
-                  <p className="text-amber-700/80 dark:text-amber-400/80 text-xs mt-1 mb-4">You have not been assigned to a group yet. Please fill out the group assignment form below.</p>
-                  
-                  <a
-                    href={FALLBACK_JOIN_FORM_LINK}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold text-sm py-3.5 rounded-xl transition-all shadow-md active:scale-[0.98]"
-                  >
-                    Request Group Assignment ↗
-                  </a>
+                  <p className="text-amber-800 dark:text-amber-300 font-bold text-sm">Group link not found</p>
+                  <p className="text-amber-700/80 dark:text-amber-400/80 text-xs mt-1 mb-4">Please contact the course instructor for assistance.</p>
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => { setResult('idle'); setRollNumber(''); setStudent(null); }}
-                className="text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-              >
-                ← Check another roll number
-              </button>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setStep('choose_group'); setSelectedGroup(assignedGroup || 'A'); }}
+                  className="text-xs font-semibold text-blue-600 hover:underline"
+                >
+                  Change Group
+                </button>
+                <span className="text-slate-300 dark:text-slate-600">·</span>
+                <button
+                  type="button"
+                  onClick={resetToSearch}
+                  className="text-xs font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                >
+                  Check another roll
+                </button>
+              </div>
             </div>
           )}
 
-          {result === 'not-found' && (
-            <div className="flex flex-col gap-5 text-center animate-in fade-in duration-300">
-              <div className="w-16 h-16 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto">
-                <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="15" y1="9" x2="9" y2="15"></line>
-                  <line x1="9" y1="9" x2="15" y2="15"></line>
-                </svg>
+          {/* STEP 3: Existing Student, but NO Group Assigned */}
+          {step === 'choose_group' && (
+            <form onSubmit={handleGroupSubmit} className="flex flex-col gap-5 animate-in fade-in duration-300">
+              <div className="text-center">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Choose Your Group</h2>
+                <p className="text-slate-500 text-xs sm:text-sm mt-1">
+                  Hi <span className="font-semibold text-slate-800 dark:text-slate-200">{student?.name || rollNumber}</span>, select your group to join the chat channel:
+                </p>
               </div>
 
               <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Roll Number Not Found</h2>
-                <p className="text-slate-500 text-xs mt-1">
-                  Roll <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{rollNumber}</span> is not registered in the active directory.
-                </p>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Select Group
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {AVAILABLE_GROUPS.map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setSelectedGroup(g)}
+                      className={`py-3 rounded-xl font-bold text-base border transition-all ${
+                        selectedGroup === g
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20 scale-[1.02]'
+                          : 'bg-slate-50 dark:bg-[#0d1117] border-slate-200 dark:border-[#30363d] text-slate-700 dark:text-slate-300 hover:border-blue-300'
+                      }`}
+                    >
+                      Group {g}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="bg-slate-50 dark:bg-[#0d1117] border border-slate-200 dark:border-[#30363d] rounded-2xl p-5 text-center">
-                <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
-                  If you have just enrolled or have not been added yet, please submit your details through the group request form:
-                </p>
+              <button
+                type="submit"
+                disabled={submitting || !selectedGroup}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl transition-all shadow-md shadow-blue-600/20 active:scale-[0.98]"
+              >
+                {submitting ? 'Saving Group…' : `Join Group ${selectedGroup} Chat →`}
+              </button>
+
+              <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                <button type="button" onClick={resetToSearch} className="hover:text-slate-600 dark:hover:text-slate-200">
+                  ← Back
+                </button>
                 <a
                   href={FALLBACK_JOIN_FORM_LINK}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-3.5 rounded-xl transition-all shadow-md active:scale-[0.98]"
+                  className="text-blue-600 hover:underline"
                 >
-                  Open Group Request Form ↗
+                  Need Form? ↗
                 </a>
+              </div>
+            </form>
+          )}
+
+          {/* STEP 4: Brand New Student Registration */}
+          {step === 'register_new' && (
+            <form onSubmit={handleGroupSubmit} className="flex flex-col gap-5 animate-in fade-in duration-300">
+              <div className="text-center">
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="8.5" cy="7" r="4"></circle>
+                    <line x1="20" y1="8" x2="20" y2="14"></line>
+                    <line x1="23" y1="11" x2="17" y2="11"></line>
+                  </svg>
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Register & Join Group</h2>
+                <p className="text-slate-500 text-xs sm:text-sm mt-1">
+                  Roll <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{rollNumber}</span> is new. Please enter your name and choose your group:
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="e.g. Rahul Sharma"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-[#0d1117] border border-slate-200 dark:border-[#30363d] rounded-xl px-3.5 py-2.5 text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Select Group
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {AVAILABLE_GROUPS.map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setSelectedGroup(g)}
+                      className={`py-2.5 rounded-xl font-bold text-sm border transition-all ${
+                        selectedGroup === g
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm scale-[1.02]'
+                          : 'bg-slate-50 dark:bg-[#0d1117] border-slate-200 dark:border-[#30363d] text-slate-700 dark:text-slate-300 hover:border-blue-300'
+                      }`}
+                    >
+                      Group {g}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <button
-                type="button"
-                onClick={() => { setResult('idle'); setRollNumber(''); }}
-                className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                type="submit"
+                disabled={submitting || !newName.trim() || !selectedGroup}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl transition-all shadow-md shadow-blue-600/20 active:scale-[0.98]"
               >
-                ← Try another Roll Number
+                {submitting ? 'Registering…' : `Register & Join Group ${selectedGroup} →`}
               </button>
-            </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                <button type="button" onClick={resetToSearch} className="hover:text-slate-600 dark:hover:text-slate-200">
+                  ← Back
+                </button>
+                <a
+                  href={FALLBACK_JOIN_FORM_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  Google Form ↗
+                </a>
+              </div>
+            </form>
           )}
+
         </div>
       </main>
     </div>
