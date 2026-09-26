@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabase';
 import { callFunction } from '../../lib/api';
+import { buildTheoryAttendanceWorkbook, downloadWorkbook } from '../../lib/theoryExcelExport';
 import { toast } from '../../components/ui/Toast';
 import { Modal } from '../../components/ui/Modal';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -236,13 +237,18 @@ export function ReportsPage({ staff, courseName, focusSessionId, onFocusHandled 
   async function handleExcelExport() {
     setExporting(true);
     try {
-      const res = await callFunction<{ url: string }>('excel-sync', {
+      const result = await buildTheoryAttendanceWorkbook(supabase, {
         courseName,
         fromDate: exportFrom || undefined,
         toDate: exportTo || undefined,
       });
-      window.open(res.url, '_blank');
-      toast('success', 'Attendance.xlsx is ready.');
+      if (result.sessionCount === 0) {
+        toast('error', 'No theory sessions with attendance found for this course and date range.');
+        return;
+      }
+      downloadWorkbook(result.buffer, result.fileName);
+      const skipped = result.skippedEmptySessions ? ` (${result.skippedEmptySessions} empty session skipped)` : '';
+      toast('success', `${result.fileName} downloaded — ${result.sessionCount} theory sessions, ${result.studentCount} students${skipped}.`);
     } catch (e) {
       toast('error', e instanceof Error ? e.message : 'Export failed.');
     } finally {
@@ -308,7 +314,7 @@ export function ReportsPage({ staff, courseName, focusSessionId, onFocusHandled 
           <input type="date" value={exportTo} onChange={(e) => setExportTo(e.target.value)} className="input-base w-auto text-xs" title="Export to date (optional)" />
           <button onClick={handleCsvExport} className="btn-secondary btn-sm">Export CSV</button>
           <button onClick={handleExcelExport} disabled={exporting} className="btn-primary btn-sm">
-            {exporting ? 'Preparing…' : 'Download Excel'}
+            {exporting ? 'Preparing…' : 'Download Theory Excel'}
           </button>
         </div>
       </div>
